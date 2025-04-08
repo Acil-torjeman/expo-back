@@ -1,0 +1,132 @@
+src/
+├── app.controller.ts
+├── app.service.ts
+├── app.module.ts
+├── main.ts
+│
+├── auth/
+│   ├── auth.module.ts
+│   ├── auth.controller.ts
+│   ├── auth.service.ts
+│   ├── guards/
+│   ├── strategies/
+│   └── dto/
+│
+├── user/
+│   ├── user.module.ts
+│   ├── user.service.ts
+│   ├── user.controller.ts
+│   ├── entities/
+│   └── dto/
+│
+├── organizer/
+│   ├── organizer.module.ts
+│   ├── organizer.controller.ts
+│   ├── organizer.service.ts
+│   ├── entities/
+│   └── dto/
+│
+├── exhibitor/
+│   ├── exhibitor.module.ts
+│   ├── exhibitor.controller.ts
+│   ├── exhibitor.service.ts
+│   ├── entities/
+│   └── dto/
+│
+├── company/
+│   ├── company.module.ts
+│   ├── company.controller.ts
+│   ├── company.service.ts
+│   ├── entities/
+│   └── dto/
+│
+├── event/
+│   ├── event.module.ts
+│   ├── event.controller.ts
+│   ├── event.service.ts
+│   ├── entities/
+│   └── dto/
+│
+├── equipment/
+│   ├── equipment.module.ts
+│   ├── equipment.controller.ts
+│   ├── equipment.service.ts
+│   ├── entities/
+│   └── dto/
+│
+├── plan/
+│   ├── plan.module.ts
+│   ├── plan.controller.ts
+│   ├── plan.service.ts
+│   ├── entities/
+│   └── dto/
+│
+├── stand/
+│   ├── stand.module.ts
+│   ├── stand.controller.ts
+│   ├── stand.service.ts
+│   ├── entities/
+│   └── dto/
+│
+├── registration/
+│   ├── registration.module.ts
+│   ├── registration.controller.ts
+│   ├── registration.service.ts
+│   ├── entities/
+│   └── dto/
+│
+├── invoice/
+│   ├── invoice.module.ts
+│   ├── invoice.controller.ts
+│   ├── invoice.service.ts
+│   ├── entities/
+│   └── dto/
+│
+├── payment/
+│   ├── payment.module.ts
+│   ├── payment.controller.ts
+│   ├── payment.service.ts
+│   ├── entities/
+│   └── dto/
+│
+├── notification/
+│   ├── notification.module.ts
+│   ├── notification.controller.ts
+│   ├── notification.service.ts
+│   ├── entities/
+│   └── dto/
+│
+├── message/
+│   ├── message.module.ts
+│   ├── message.controller.ts
+│   ├── message.service.ts
+│   ├── entities/
+│   └── dto/
+│
+├── dashboard/
+│   ├── dashboard.module.ts
+│   ├── dashboard.controller.ts
+│   ├── dashboard.service.ts
+│   ├── dto/
+│   └── interfaces/
+│
+├── admin/
+│   ├── admin.module.ts
+│   ├── admin.controller.ts
+│   ├── admin.service.ts
+│   └── dto/
+│
+├── upload/
+│   ├── upload.module.ts
+│   ├── upload.controller.ts
+│   └── upload.service.ts
+│
+├── constants/
+│   ├── industry-sectors.ts
+│   ├── roles.enum.ts
+│   └── registration-status.enum.ts
+│
+└── config/
+    ├── database.config.ts
+    ├── jwt.config.ts
+    └── storage.config.ts

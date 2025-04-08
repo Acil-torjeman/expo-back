@@ -1,0 +1,223 @@
+<!DOCTYPE html><html lang="fr"><head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Gestion des Comptes | ExpoManagement</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
+    <link href="https://ai-public.creatie.ai/gen_page/tailwind-custom.css" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com/3.4.5?plugins=forms@0.5.7,typography@0.5.13,aspect-ratio@0.4.2,container-queries@0.1.1"></script>
+    <script src="https://ai-public.creatie.ai/gen_page/tailwind-config.min.js" data-color="#319795" data-border-radius="medium"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="min-h-screen flex flex-col"><aside class="fixed left-0 top-0 h-full w-60 bg-white border-r border-gray-200 transition-all duration-300 pt-16 hover:w-60"><nav class="flex flex-col gap-1 p-4"><a href="#" class="flex items-center h-12 px-4 rounded-md bg-teal-50 text-teal-600 border-l-4 border-teal-600"><i class="fas fa-tachometer-alt w-5"></i><span class="ml-3">Dashboard</span></a><a href="#" class="flex items-center h-12 px-4 rounded-md text-gray-600 hover:bg-gray-50 transition-colors duration-300"><i class="fas fa-users w-5"></i><span class="ml-3">Accounts</span></a><a href="#" class="flex items-center h-12 px-4 rounded-md text-gray-600 hover:bg-gray-50 transition-colors duration-300"><i class="fas fa-trash w-5"></i><span class="ml-3">Trash</span></a><a href="#" class="flex items-center h-12 px-4 rounded-md text-gray-600 hover:bg-gray-50 transition-colors duration-300"><i class="fas fa-envelope w-5"></i><span class="ml-3">Messages</span></a><a href="#" class="flex items-center h-12 px-4 rounded-md text-gray-600 hover:bg-gray-50 transition-colors duration-300"><i class="fas fa-cog w-5"></i><span class="ml-3">Settings</span></a></nav></aside>
+        <nav class="bg-white/90 backdrop-blur border-b border-gray-200 h-16 fixed w-full top-0 z-50 shadow-sm">
+            <div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16"><div class="flex items-center gap-4"><button class="p-2 text-gray-600 hover:bg-gray-100 rounded-md"><i class="fas fa-bars"></i></button><h1 class="text-lg font-semibold text-gray-900">Gestion des Comptes</h1></div><div class="flex-1 max-w-[600px] mx-auto"><div class="relative"><input type="search" placeholder="Rechercher..." class="w-full pl-10 pr-4 py-2 rounded-md border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-transparent"/><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i><span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">Ctrl+K</span></div></div><div class="flex items-center gap-4"><button class="p-2 text-gray-600 hover:bg-gray-100 rounded-md"><i class="fas fa-sun"></i></button><div class="relative"><button class="p-2 text-gray-600 hover:bg-gray-100 rounded-md"><i class="fas fa-bell"></i><span class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span></button></div><div class="relative"><button class="flex items-center gap-2 p-1 rounded-md hover:bg-gray-100"><img src="https://creatie.ai/ai/api/search-image?query=A professional headshot&width=100&height=100&flag=17c67af1-857e-4a09-9773-4c1b3cff8e67" alt="Profile" class="h-8 w-8 rounded-full ring-2 ring-purple-500"/><span class="text-sm font-medium text-gray-700">Sophie Martin</span><i class="fas fa-chevron-down text-gray-400"></i></button></div></div></div>
+            </div>
+        </nav>
+        <main class="flex-1 pl-[240px] pt-16">
+            <div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div class="mb-8">
+                    <h1 class="text-2xl font-bold text-gray-900">Accounts Management</h1>
+                    <p class="mt-2 text-sm text-gray-500">Gérez tous les comptes utilisateurs de la plateforme</p>
+                </div>
+                <div class="bg-white shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <div class="sm:flex sm:items-center">
+                            <div class="sm:flex-auto">
+                                <div class="flex gap-2">
+                                    <button class="!rounded-button inline-flex items-center px-4 py-2 border border-teal-500 text-sm font-medium rounded-md text-teal-700 bg-white hover:bg-teal-50">
+                                        <i class="fas fa-filter mr-2"></i>
+                                        Filtres
+                                    </button>
+                                    <button class="!rounded-button inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-100">
+                                        <i class="fas fa-sync-alt mr-2"></i>
+                                        Actualiser
+                                    </button>
+                                </div>
+                                <div class="mt-4 flex flex-wrap gap-2">
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-teal-50 text-teal-800">
+                                        Statut: Actif
+                                        <button class="ml-2 text-gray-400 hover:text-gray-500">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </span>
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-teal-50 text-teal-800">
+                                        Rôle: Organisateur
+                                        <button class="ml-2 text-gray-400 hover:text-gray-500">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-8 flex flex-col">
+                            <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+                                <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
+                                    <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                                        <table class="min-w-full divide-y divide-gray-300">
+                                            <thead class="bg-white">
+                                                <tr>
+                                                    <th scope="col" class="relative w-12 px-6 sm:w-16 sm:px-8">
+                                                        <input type="checkbox" class="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300"/>
+                                                    </th>
+                                                    <th scope="col" class="py-3 pl-4 pr-3 text-left text-base font-medium text-gray-800">Utilisateur</th>
+                                                    <th scope="col" class="py-3 px-3 text-left text-base font-medium text-gray-800">Email</th>
+                                                    <th scope="col" class="py-3 px-3 text-left text-base font-medium text-gray-800">Rôle</th>
+                                                    <th scope="col" class="py-3 px-3 text-left text-base font-medium text-gray-800">Statut</th>
+                                                    <th scope="col" class="py-3 px-3 text-left text-base font-medium text-gray-800">Créé le</th>
+                                                    <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                                                        <span class="sr-only">Actions</span>
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-gray-200 bg-white">
+                                                <tr class="h-[60px] hover:bg-gray-50 group">
+                                                    <td class="relative w-12 px-6 sm:w-16 sm:px-8">
+                                                        <input type="checkbox" class="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300"/>
+                                                    </td>
+                                                    <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm">
+                                                        <div class="flex items-center">
+                                                            <div class="h-10 w-10 flex-shrink-0">
+                                                                <img class="h-10 w-10 rounded-full" src="https://creatie.ai/ai/api/search-image?query=A professional headshot of a young business woman with a confident smile, wearing a blazer, against a clean white background. The photo has perfect lighting and shows professionalism.&width=40&height=40&orientation=squarish&flag=208c5db5-dc36-4205-9490-17f736120c0a&flag=4e5ab4c1-3ef0-4e8f-a631-9b4ded9b6461&flag=1a8def7b-8ff6-418e-a1f3-9404ebf86d5c&flag=450ba825-151e-47b3-9814-431685f77095&flag=ac81367a-c43c-41dc-8152-0d6627e3a08d&flag=f986c93d-e6aa-471b-9bef-01276b28fc3c" alt=""/>
+                                                            </div>
+                                                            <div class="ml-4">
+                                                                <div class="font-medium text-gray-900">Sophie Martin</div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">sophie.martin@example.com</td>
+                                                    <td class="whitespace-nowrap px-3 py-4 text-sm">
+                                                        <span class="inline-flex rounded-full bg-purple-100 px-2 text-xs font-semibold leading-5 text-purple-800">Admin</span>
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-4 text-sm">
+                                                        <span class="inline-flex rounded-full bg-green-100 px-2 text-xs font-semibold leading-5 text-green-800">Actif</span>
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">01/02/2024</td>
+                                                    <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                                                        <button class="text-custom hover:text-custom-600">
+                                                            <i class="fas fa-ellipsis-v"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                                <tr class="h-[60px] hover:bg-gray-50 group">
+                                                    <td class="relative w-12 px-6 sm:w-16 sm:px-8">
+                                                        <input type="checkbox" class="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300"/>
+                                                    </td>
+                                                    <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm">
+                                                        <div class="flex items-center">
+                                                            <div class="h-10 w-10 flex-shrink-0">
+                                                                <img class="h-10 w-10 rounded-full" src="https://creatie.ai/ai/api/search-image?query=A professional headshot of a middle-aged business man wearing a suit and tie, with a friendly expression, against a neutral background. The lighting is professional and even.&width=40&height=40&orientation=squarish&flag=8c9c6478-73b1-401f-bff1-d0f67c58b47a&flag=9b66c92d-85c2-42eb-a8fa-d7c72f4fbc49&flag=21549c65-4d2d-4374-b7e9-5b9682ceba92&flag=37679a7e-e56a-4b79-8d93-9b85a610cbd6&flag=b4944a38-9ede-4542-83c6-017064ee86b4&flag=94430d1c-bb94-4aa4-8788-6dca2125c3a2" alt=""/>
+                                                            </div>
+                                                            <div class="ml-4">
+                                                                <div class="font-medium text-gray-900">Thomas Dubois</div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">thomas.dubois@example.com</td>
+                                                    <td class="whitespace-nowrap px-3 py-4 text-sm">
+                                                        <span class="inline-flex rounded-full bg-blue-100 px-2 text-xs font-semibold leading-5 text-blue-800">Organisateur</span>
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-4 text-sm">
+                                                        <span class="inline-flex rounded-full bg-yellow-100 px-2 text-xs font-semibold leading-5 text-yellow-800">En attente</span>
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">15/01/2024</td>
+                                                    <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                                                        <button class="text-custom hover:text-custom-600">
+                                                            <i class="fas fa-ellipsis-v"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                            
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6 mt-4">
+                            <div class="flex flex-1 justify-between sm:hidden">
+                                <button class="!rounded-button relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Précédent</button>
+                                <button class="!rounded-button relative ml-3 inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Suivant</button>
+                            </div>
+                            <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                                <div>
+                                    <p class="text-sm text-gray-700">Showing <span class="font-medium">1</span> to <span class="font-medium">10</span> of <span class="font-medium">24</span> results</p>
+                                </div>
+                                <div>
+                                    <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                                        <button class="!rounded-button relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                        <button class="!rounded-button relative inline-flex items-center px-4 py-2 text-sm font-semibold text-custom ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">1</button>
+                                        <button class="!rounded-button relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">2</button>
+                                        <button class="!rounded-button relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </nav>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <div id="modal-filter" class="hidden fixed z-10 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
+            <div class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+                <div>
+                    <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">Filtres</h3>
+                    <div class="mt-4">
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Statut</label>
+                                <select class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-custom focus:border-custom sm:text-sm !rounded-button">
+                                    <option>Tous</option>
+                                    <option>Actif</option>
+                                    <option>En attente</option>
+                                    <option>Inactif</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Rôle</label>
+                                <select class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-custom focus:border-custom sm:text-sm !rounded-button">
+                                    <option>Tous</option>
+                                    <option>Admin</option>
+                                    <option>Organisateur</option>
+                                    <option>Exposant</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-5 sm:mt-6 sm:grid sm:grid-cols-2 sm:gap-3 sm:grid-flow-row-dense">
+                    <button type="button" class="!rounded-button w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-custom text-base font-medium text-white hover:bg-custom-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-custom sm:col-start-2 sm:text-sm">Appliquer</button>
+                    <button type="button" class="!rounded-button mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-custom sm:mt-0 sm:col-start-1 sm:text-sm">Annuler</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="modal-delete" class="hidden fixed z-10 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
+            <div class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+                <div class="sm:flex sm:items-start">
+                    <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                        <i class="fas fa-exclamation-triangle text-red-600"></i>
+                    </div>
+                    <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                        <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">Supprimer le compte</h3>
+                        <div class="mt-2">
+                            <p class="text-sm text-gray-500">Êtes-vous sûr de vouloir supprimer ce compte ? Cette action ne peut pas être annulée.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                    <button type="button" class="!rounded-button w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm">Supprimer</button>
+                    <button type="button" class="!rounded-button mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-custom sm:mt-0 sm:w-auto sm:text-sm">Annuler</button>
+                </div>
+            </div>
+        </div>
+    </div>
