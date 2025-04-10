@@ -17,7 +17,6 @@ export interface EventResponse {
   };
   allowedSectors: string[];
   allowedSubsectors: string[];
-  allowedCountries: string[];
   maxExhibitors?: number;
   registrationDeadline: Date;
   plans: Array<{

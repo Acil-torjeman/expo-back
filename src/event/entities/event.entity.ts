@@ -58,8 +58,7 @@ export class Event extends Document {
   @Prop({ type: [String], required: true })
   allowedSubsectors: string[];
   
-  @Prop({ type: [String] })
-  allowedCountries: string[];
+
   
   @Prop()
   maxExhibitors: number;
@@ -90,6 +89,8 @@ export class Event extends Document {
     default: EventStatus.DRAFT
   })
   status: string;
+  @Prop()
+  statusReason: string;
   
   @Prop({ 
     type: String, 

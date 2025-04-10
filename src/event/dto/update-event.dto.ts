@@ -22,4 +22,7 @@ export class UpdateEventDto extends PartialType(CreateEventDto) {
   @IsArray({ message: 'Equipment IDs must be an array' })
   @IsMongoId({ each: true, message: 'Each equipment ID must be a valid MongoDB ID' })
   equipmentIds?: string[];
+
+  @IsOptional()
+  statusReason?: string;
 }

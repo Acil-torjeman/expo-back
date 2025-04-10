@@ -75,10 +75,7 @@ export class CreateEventDto {
   @ArrayMinSize(1, { message: 'At least one subsector must be selected' })
   allowedSubsectors: string[];
   
-  @IsOptional()
-  @IsArray({ message: 'Allowed countries must be an array' })
-  @IsString({ each: true, message: 'Each country must be a string' })
-  allowedCountries?: string[];
+
   
   @IsOptional()
   @IsNumber({}, { message: 'Maximum exhibitors must be a number' })
