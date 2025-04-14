@@ -100,7 +100,7 @@ export class EventController {
       throw new InternalServerErrorException('Failed to retrieve public events');
     }
   }
-  
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   findOne(@Param('id') id: string) {

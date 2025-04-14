@@ -28,44 +28,49 @@ export class RegistrationService {
     private mailService: MailService
   ) {}
 
-/**
- * Find official exhibitors for an event
- * These are exhibitors with completed registrations or at least approved ones with selected stands
- */
-async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
-  this.logger.log(`Finding official exhibitors for event: ${eventId}`);
-  
-  try {
-    // Find either completed registrations or approved with stands selected
-    const registrations = await this.registrationModel.find({
-      event: new Types.ObjectId(eventId),
-      $or: [
-        { status: RegistrationStatus.COMPLETED },
-        { 
-          status: RegistrationStatus.APPROVED,
-          standSelectionCompleted: true,
-          stands: { $exists: true, $ne: [] }
-        }
-      ]
-    })
-    .populate({
-      path: 'exhibitor',
-      populate: {
-        path: 'company',
-        select: 'companyName companyLogoPath country sector companyDescription website',
-      }
-    })
-    .populate('stands', 'number area type basePrice status description') // Updated fields to match Stand entity
-    .sort({ createdAt: -1 })
-    .exec();
+  /**
+   * Find official exhibitors for an event
+   * These are exhibitors with completed registrations or at least approved ones with selected stands
+   */
+  async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
+    this.logger.log(`Finding official exhibitors for event: ${eventId}`);
     
-    return registrations;
-  } catch (error) {
-    this.logger.error(`Error finding official exhibitors for event ${eventId}: ${error.message}`);
-    return [];
+    try {
+      // Find either completed registrations or approved with stands selected
+      const registrations = await this.registrationModel.find({
+        event: new Types.ObjectId(eventId),
+        $or: [
+          { status: RegistrationStatus.COMPLETED },
+          { 
+            status: RegistrationStatus.APPROVED,
+            standSelectionCompleted: true,
+            stands: { $exists: true, $ne: [] }
+          }
+        ]
+      })
+      .populate({
+        path: 'exhibitor',
+        populate: [
+          { 
+            path: 'user',
+            select: 'username email -_id'
+          },
+          { 
+            path: 'company',
+            select: 'companyName companyLogoPath country sector subsector companyDescription website'
+          }
+        ]
+      })
+      .populate('stands', 'number area type basePrice status description')
+      .sort({ createdAt: -1 })
+      .exec();
+      
+      return registrations;
+    } catch (error) {
+      this.logger.error(`Error finding official exhibitors for event ${eventId}: ${error.message}`);
+      return [];
+    }
   }
-}
-
 
   /**
    * Create an initial registration for an event
@@ -120,10 +125,6 @@ async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
       throw new BadRequestException(`Failed to create registration: ${error.message}`);
     }
   }
-  /**
- * Find official exhibitors for an event
- * These are exhibitors with completed registrations or at least approved ones with selected stands
- */
 
   /**
    * Get all registrations
@@ -146,10 +147,22 @@ async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
     }
     
     return this.registrationModel.find(query)
-      .populate('exhibitor', '-__v')
-      .populate('event', '-__v')
-      .populate('stands', '-__v')
-      .populate('equipment', '-__v')
+      .populate({
+        path: 'exhibitor',
+        populate: [
+          { 
+            path: 'user',
+            select: 'username email'
+          },
+          { 
+            path: 'company',
+            select: 'companyName registrationNumber companyAddress postalCity country sector subsector companyDescription contactPhone contactPhoneCode companyLogoPath'
+          }
+        ]
+      })
+      .populate('event', 'name startDate endDate location type')
+      .populate('stands', 'number area type basePrice status')
+      .populate('equipment', 'name description price type')
       .populate('reviewedBy', 'username email')
       .sort({ createdAt: -1 })
       .exec();
@@ -162,10 +175,22 @@ async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
     this.logger.log(`Finding registration with ID: ${id}`);
     
     const registration = await this.registrationModel.findById(id)
-      .populate('exhibitor', '-__v')
-      .populate('event', '-__v')
-      .populate('stands', '-__v')
-      .populate('equipment', '-__v')
+      .populate({
+        path: 'exhibitor',
+        populate: [
+          { 
+            path: 'user',
+            select: 'username email'
+          },
+          { 
+            path: 'company',
+            select: 'companyName registrationNumber companyAddress postalCity country sector subsector companyDescription contactPhone contactPhoneCode companyLogoPath'
+          }
+        ]
+      })
+      .populate('event', 'name startDate endDate location type')
+      .populate('stands', 'number area type basePrice status')
+      .populate('equipment', 'name description price type')
       .populate('reviewedBy', 'username email')
       .exec();
     
@@ -183,9 +208,9 @@ async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
     this.logger.log(`Finding registrations for exhibitor: ${exhibitorId}`);
     
     return this.registrationModel.find({ exhibitor: new Types.ObjectId(exhibitorId) })
-      .populate('event', '-__v')
-      .populate('stands', '-__v')
-      .populate('equipment', '-__v')
+      .populate('event', 'name startDate endDate location type')
+      .populate('stands', 'number area type basePrice status')
+      .populate('equipment', 'name description price type')
       .sort({ createdAt: -1 })
       .exec();
   }
@@ -197,9 +222,23 @@ async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
     this.logger.log(`Finding registrations for event: ${eventId}`);
     
     return this.registrationModel.find({ event: new Types.ObjectId(eventId) })
-      .populate('exhibitor', '-__v')
-      .populate('stands', '-__v')
-      .populate('equipment', '-__v')
+      .populate({
+        path: 'exhibitor',
+        populate: [
+          { 
+            path: 'user',
+            select: 'username email'
+          },
+          { 
+            path: 'company',
+            select: 'companyName registrationNumber companyAddress postalCity country sector subsector companyDescription contactPhone contactPhoneCode companyLogoPath'
+          }
+        ]
+      })
+      .populate('event', 'name startDate endDate location type')
+      .populate('stands', 'number area type basePrice status')
+      .populate('equipment', 'name description price type')
+      .populate('reviewedBy', 'username email')
       .sort({ createdAt: -1 })
       .exec();
   }
@@ -263,8 +302,20 @@ async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
       { $set: updateData },
       { new: true }
     )
-    .populate('exhibitor', '-__v')
-    .populate('event', '-__v')
+    .populate({
+      path: 'exhibitor',
+      populate: [
+        { 
+          path: 'user',
+          select: 'username email'
+        },
+        { 
+          path: 'company',
+          select: 'companyName companyLogoPath country sector subsector'
+        }
+      ]
+    })
+    .populate('event', 'name startDate endDate')
     .populate('reviewedBy', 'username email')
     .exec();
     
@@ -386,10 +437,22 @@ async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
       { $set: updateData },
       { new: true }
     )
-    .populate('exhibitor', '-__v')
-    .populate('event', '-__v')
-    .populate('stands', '-__v')
-    .populate('equipment', '-__v')
+    .populate({
+      path: 'exhibitor',
+      populate: [
+        { 
+          path: 'user',
+          select: 'username email'
+        },
+        { 
+          path: 'company',
+          select: 'companyName companyLogoPath country sector subsector'
+        }
+      ]
+    })
+    .populate('event', 'name startDate endDate location type')
+    .populate('stands', 'number area type basePrice status')
+    .populate('equipment', 'name description price type')
     .populate('reviewedBy', 'username email')
     .exec();
     
@@ -471,10 +534,22 @@ async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
       { $set: updateData },
       { new: true }
     )
-    .populate('exhibitor', '-__v')
-    .populate('event', '-__v')
-    .populate('stands', '-__v')
-    .populate('equipment', '-__v')
+    .populate({
+      path: 'exhibitor',
+      populate: [
+        { 
+          path: 'user',
+          select: 'username email'
+        },
+        { 
+          path: 'company',
+          select: 'companyName companyLogoPath country sector subsector'
+        }
+      ]
+    })
+    .populate('event', 'name startDate endDate location type')
+    .populate('stands', 'number area type basePrice status')
+    .populate('equipment', 'name description price type')
     .populate('reviewedBy', 'username email')
     .exec();
     
@@ -512,10 +587,22 @@ async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
       { $set: updateData },
       { new: true }
     )
-    .populate('exhibitor', '-__v')
-    .populate('event', '-__v')
-    .populate('stands', '-__v')
-    .populate('equipment', '-__v')
+    .populate({
+      path: 'exhibitor',
+      populate: [
+        { 
+          path: 'user',
+          select: 'username email'
+        },
+        { 
+          path: 'company',
+          select: 'companyName companyLogoPath country sector subsector'
+        }
+      ]
+    })
+    .populate('event', 'name startDate endDate location type')
+    .populate('stands', 'number area type basePrice status')
+    .populate('equipment', 'name description price type')
     .populate('reviewedBy', 'username email')
     .exec();
     
@@ -570,8 +657,20 @@ async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
       },
       { new: true }
     )
-    .populate('exhibitor', '-__v')
-    .populate('event', '-__v')
+    .populate({
+      path: 'exhibitor',
+      populate: [
+        { 
+          path: 'user',
+          select: 'username email'
+        },
+        { 
+          path: 'company',
+          select: 'companyName companyLogoPath country sector subsector'
+        }
+      ]
+    })
+    .populate('event', 'name startDate endDate')
     .populate('reviewedBy', 'username email')
     .exec();
     
