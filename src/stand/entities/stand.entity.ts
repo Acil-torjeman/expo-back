@@ -57,6 +57,9 @@ export class Stand extends Document {
   status: string;
   
   @Prop()
+  statusReason: string;
+  
+  @Prop()
   description: string;
   
   @Prop([String])
@@ -67,6 +70,9 @@ export class Stand extends Document {
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User' })
   exhibitorId: MongooseSchema.Types.ObjectId;
+  
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Registration' })
+  reservation: MongooseSchema.Types.ObjectId;
 }
 
 export const StandSchema = SchemaFactory.createForClass(Stand);

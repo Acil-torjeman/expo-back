@@ -14,6 +14,7 @@ import { StandService } from '../stand/stand.service';
 import { Stand } from '../stand/entities/stand.entity';
 import { EquipmentService } from '../equipment/equipment.service';
 import { UserRole } from '../user/entities/user.entity';
+import { EventStatus, EventVisibility } from './entities/event.entity';
 
 @Injectable()
 export class EventService {
@@ -41,7 +42,7 @@ export class EventService {
    * @param userId User ID
    * @returns Boolean indicating if the user is the owner
    */
-  private async isOwner(eventId: string, userId: string): Promise<boolean> {
+  async isOwner(eventId: string, userId: string): Promise<boolean> {
     try {
       // Direct database query to verify ownership
       const event = await this.eventModel.findById(eventId).exec();
@@ -695,7 +696,82 @@ export class EventService {
       return [];
     }
   }
+/**
+ * Get public events with filters
+ */
+async getPublicEvents(search?: string, sector?: string, upcoming: boolean = true): Promise<Event[]> {
+  this.logger.log(`Finding public events with filters: search=${search}, sector=${sector}, upcoming=${upcoming}`);
+  
+  const query: any = {
+    status: EventStatus.PUBLISHED,
+    visibility: EventVisibility.PUBLIC,
+  };
+  
+  // Filter by search string (case-insensitive)
+  if (search) {
+    query.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } },
+      { 'location.city': { $regex: search, $options: 'i' } },
+      { 'location.country': { $regex: search, $options: 'i' } }
+    ];
+  }
 
+  // Filter by sector if provided
+  if (sector) {
+    query.allowedSectors = sector;
+  }
+
+  // Filter for upcoming events
+  if (upcoming) {
+    query.startDate = { $gte: new Date() };
+  }
+  
+  return this.eventModel.find(query)
+    .populate('organizer', 'username email')
+    .populate('plan', 'name')
+    .sort({ startDate: 1 })
+    .exec();
+}
+async findPublicEvents(search?: string, sector?: string, upcoming: boolean = true): Promise<Event[]> {
+  this.logger.log(`Finding public events with filters: search=${search}, sector=${sector}, upcoming=${upcoming}`);
+  
+  try {
+    const query: any = {
+      status: EventStatus.PUBLISHED,
+      visibility: EventVisibility.PUBLIC,
+    };
+    
+    // Filter by search string (case-insensitive)
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { 'location.city': { $regex: search, $options: 'i' } },
+        { 'location.country': { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Filter by sector if provided
+    if (sector) {
+      query.allowedSectors = sector;
+    }
+
+    // Filter for upcoming events
+    if (upcoming) {
+      query.startDate = { $gte: new Date() };
+    }
+    
+    return this.eventModel.find(query)
+      .populate('organizer', 'username email')
+      .populate('plan', 'name')
+      .sort({ startDate: 1 })
+      .exec();
+  } catch (error) {
+    this.logger.error(`Error finding public events: ${error.message}`, error.stack);
+    throw new InternalServerErrorException('Failed to find public events');
+  }
+}
   /**
    * Get statistics for an event
    */
@@ -771,7 +847,7 @@ export class EventService {
       throw new InternalServerErrorException(`Failed to get event statistics: ${error.message}`);
     }
   }
-
+  
   /**
    * Get dashboard data for all events of an organizer
    */

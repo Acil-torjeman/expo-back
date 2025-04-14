@@ -15,6 +15,7 @@ import {
   Logger,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -80,6 +81,26 @@ export class EventController {
     return this.eventService.getOrganizerDashboard(userId);
   }
 
+  @Get('public-events')
+  @HttpCode(HttpStatus.OK)
+  async getPublicEvents(
+    @Query('search') search?: string,
+    @Query('sector') sector?: string,
+    @Query('upcoming') upcoming?: string,
+  ) {
+    this.logger.log(`Getting public events with filters: ${JSON.stringify({ search, sector, upcoming })}`);
+    
+    // Parse upcoming parameter
+    const isUpcoming = upcoming !== 'false';
+    
+    try {
+      return await this.eventService.findPublicEvents(search, sector, isUpcoming);
+    } catch (error) {
+      this.logger.error(`Error finding public events: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to retrieve public events');
+    }
+  }
+  
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   findOne(@Param('id') id: string) {
@@ -203,4 +224,5 @@ export class EventController {
     this.logger.log(`User ${userId} dissociating plan from event ${id}`);
     return this.eventService.dissociatePlan(id, userId);
   }
+
 }

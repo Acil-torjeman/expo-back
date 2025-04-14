@@ -1,34 +1,156 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+// src/registration/registration.controller.ts
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Req,
+  UseGuards,
+  Query,
+  Logger,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import { RegistrationService } from './registration.service';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { UpdateRegistrationDto } from './dto/update-registration.dto';
+import { ReviewRegistrationDto } from './dto/review-registration.dto';
+import { SelectStandsDto } from './dto/select-stands.dto';
+import { SelectEquipmentDto } from './dto/select-equipment.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../user/entities/user.entity';
 
-@Controller('registration')
+@Controller('registrations')
 export class RegistrationController {
+  private readonly logger = new Logger(RegistrationController.name);
+
   constructor(private readonly registrationService: RegistrationService) {}
 
   @Post()
-  create(@Body() createRegistrationDto: CreateRegistrationDto) {
-    return this.registrationService.create(createRegistrationDto);
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.EXHIBITOR)
+  @HttpCode(HttpStatus.CREATED)
+  create(@Body() createRegistrationDto: CreateRegistrationDto, @Req() req) {
+    this.logger.log(`Creating registration for exhibitor: ${req.user.id}`);
+    return this.registrationService.create(createRegistrationDto, req.user.id);
   }
 
   @Get()
-  findAll() {
-    return this.registrationService.findAll();
+  @UseGuards(JwtAuthGuard)
+  findAll(
+    @Req() req,
+    @Query('exhibitorId') exhibitorId?: string,
+    @Query('eventId') eventId?: string,
+    @Query('status') status?: string
+  ) {
+    const filters = { exhibitorId, eventId, status };
+    
+    this.logger.log(`Getting registrations with filters: ${JSON.stringify(filters)}`);
+    
+    // Exhibitors can only view their own registrations
+    if (req.user.role === UserRole.EXHIBITOR) {
+      filters.exhibitorId = req.user.id;
+    }
+    
+    return this.registrationService.findAll(filters);
+  }
+
+  @Get('my-registrations')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.EXHIBITOR)
+  findMyRegistrations(@Req() req) {
+    this.logger.log(`Getting registrations for exhibitor: ${req.user.id}`);
+    return this.registrationService.findByExhibitor(req.user.id);
+  }
+
+  @Get('event/:eventId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ORGANIZER, UserRole.ADMIN)
+  findByEvent(@Param('eventId') eventId: string) {
+    this.logger.log(`Getting registrations for event: ${eventId}`);
+    return this.registrationService.findByEvent(eventId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.registrationService.findOne(+id);
+  @UseGuards(JwtAuthGuard)
+  findOne(@Param('id') id: string, @Req() req) {
+    this.logger.log(`Getting registration with ID: ${id}`);
+    return this.registrationService.findOne(id);
+  }
+
+  @Post(':id/review')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ORGANIZER, UserRole.ADMIN)
+  review(
+    @Param('id') id: string,
+    @Body() reviewRegistrationDto: ReviewRegistrationDto,
+    @Req() req
+  ) {
+    this.logger.log(`Reviewing registration ${id} with status ${reviewRegistrationDto.status}`);
+    return this.registrationService.reviewRegistration(
+      id,
+      reviewRegistrationDto,
+      req.user.id,
+      req.user.role
+    );
+  }
+
+  @Post(':id/select-stands')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.EXHIBITOR)
+  selectStands(
+    @Param('id') id: string,
+    @Body() selectStandsDto: SelectStandsDto,
+    @Req() req
+  ) {
+    this.logger.log(`Selecting stands for registration ${id}`);
+    return this.registrationService.selectStands(id, selectStandsDto, req.user.id);
+  }
+
+  @Post(':id/select-equipment')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.EXHIBITOR)
+  selectEquipment(
+    @Param('id') id: string,
+    @Body() selectEquipmentDto: SelectEquipmentDto,
+    @Req() req
+  ) {
+    this.logger.log(`Selecting equipment for registration ${id}`);
+    return this.registrationService.selectEquipment(id, selectEquipmentDto, req.user.id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateRegistrationDto: UpdateRegistrationDto) {
-    return this.registrationService.update(+id, updateRegistrationDto);
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.EXHIBITOR)
+  update(
+    @Param('id') id: string,
+    @Body() updateRegistrationDto: UpdateRegistrationDto,
+    @Req() req
+  ) {
+    this.logger.log(`Updating registration ${id}`);
+    return this.registrationService.update(id, updateRegistrationDto, req.user.id);
+  }
+
+  @Post(':id/cancel')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.EXHIBITOR)
+  @HttpCode(HttpStatus.OK)
+  cancel(@Param('id') id: string, @Req() req) {
+    this.logger.log(`Cancelling registration ${id}`);
+    return this.registrationService.cancel(id, req.user.id);
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id') id: string) {
-    return this.registrationService.remove(+id);
+    this.logger.log(`Removing registration ${id}`);
+    return this.registrationService.remove(id);
   }
 }

@@ -331,6 +331,73 @@ export class StandService {
     
     return updatedStand;
   }
+  
+  /**
+   * Reserve a stand for a registration
+   */
+  async reserveStand(id: string, registrationId: string): Promise<Stand> {
+    this.logger.log(`Reserving stand ${id} for registration ${registrationId}`);
+    
+    // Get the stand
+    const stand = await this.findOne(id);
+    
+    // Check if stand is available
+    if (stand.status !== 'available') {
+      throw new BadRequestException(`Stand with ID ${id} is not available`);
+    }
+    
+    // Update the stand status
+    const updatedStand = await this.standModel.findByIdAndUpdate(
+      id,
+      { 
+        status: 'reserved',
+        reservation: new Types.ObjectId(registrationId)
+      },
+      { new: true }
+    )
+    .populate('plan')
+    .exec();
+    
+    if (!updatedStand) {
+      throw new NotFoundException(`Stand with ID ${id} not found`);
+    }
+    
+    return updatedStand;
+  }
+
+  /**
+   * Free a reserved stand
+   */
+  async freeStand(id: string): Promise<Stand> {
+    this.logger.log(`Freeing stand ${id}`);
+    
+    // Get the stand
+    const stand = await this.findOne(id);
+    
+    // Check if stand is reserved
+    if (stand.status !== 'reserved') {
+      // Already free - no change needed
+      return stand;
+    }
+    
+    // Update the stand status
+    const updatedStand = await this.standModel.findByIdAndUpdate(
+      id,
+      { 
+        status: 'available',
+        $unset: { reservation: 1 }
+      },
+      { new: true }
+    )
+    .populate('plan')
+    .exec();
+    
+    if (!updatedStand) {
+      throw new NotFoundException(`Stand with ID ${id} not found`);
+    }
+    
+    return updatedStand;
+  }
 
   /**
    * Remove stand
