@@ -139,15 +139,9 @@ export class ExhibitorController {
     this.logger.log(`Deleting exhibitor with ID: ${id}`);
     return this.exhibitorService.remove(id);
   }
-  @Get('current')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.EXHIBITOR)
-  findCurrent(@Req() req) {
-    this.logger.log(`Getting exhibitor profile for current user: ${req.user.id}`);
-    return this.exhibitorService.findByUserId(req.user.id);
-  }
 }
 
 function Req(): (target: ExhibitorController, propertyKey: "findCurrent", parameterIndex: 0) => void {
   throw new Error('Function not implemented.');
+  
 }
