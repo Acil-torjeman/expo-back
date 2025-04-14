@@ -24,6 +24,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../user/entities/user.entity';
+import { IsPublic } from '../auth/decorators/public.decorator';
+import { RegistrationStatus } from './entities/registration.entity';
 
 @Controller('registrations')
 export class RegistrationController {
@@ -76,13 +78,57 @@ export class RegistrationController {
     return this.registrationService.findByEvent(eventId);
   }
 
+  @Get('event/:eventId/official')
+  @IsPublic()
+  @HttpCode(HttpStatus.OK)
+  getOfficialExhibitors(@Param('eventId') eventId: string) {
+    this.logger.log(`Getting official exhibitors for event: ${eventId}`);
+    return this.registrationService.findOfficialExhibitors(eventId);
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   findOne(@Param('id') id: string, @Req() req) {
     this.logger.log(`Getting registration with ID: ${id}`);
     return this.registrationService.findOne(id);
   }
-
+  @Get('event/:eventId/exhibitors')  // A simpler URL that might be easier to remember
+  @IsPublic()
+  @HttpCode(HttpStatus.OK)
+  async getEventExhibitors(@Param('eventId') eventId: string) {
+    this.logger.log(`Getting exhibitors for event: ${eventId}`);
+    
+    try {
+      const registrations = await this.registrationService.findOfficialExhibitors(eventId);
+      
+      // Map to a simplified response structure if needed
+      return registrations.map(reg => {
+        const company = reg.exhibitor?.company;
+        return {
+          registrationId: reg._id,
+          exhibitorId: reg.exhibitor?._id,
+          company: company ? {
+            name: company.companyName,
+            logo: company.companyLogoPath,
+            country: company.country,
+            sector: company.sector,
+            description: company.companyDescription,
+            website: company.website
+          } : null,
+          stands: reg.stands?.map(stand => ({
+            id: stand._id,
+            number: stand.number,
+            area: stand.area,
+            type: stand.type,
+            basePrice: stand.basePrice
+          }))
+        };
+      });
+    } catch (error) {
+      this.logger.error(`Error getting exhibitors for event ${eventId}: ${error.message}`);
+      return [];
+    }
+  }
   @Post(':id/review')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ORGANIZER, UserRole.ADMIN)

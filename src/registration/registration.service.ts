@@ -1,13 +1,5 @@
 // src/registration/registration.service.ts
-import { 
-  Injectable, 
-  NotFoundException, 
-  BadRequestException, 
-  Logger, 
-  ForbiddenException,
-  Inject,
-  forwardRef
-} from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, BadRequestException, ForbiddenException, InternalServerErrorException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Registration, RegistrationStatus } from './entities/registration.entity';
@@ -35,6 +27,45 @@ export class RegistrationService {
     @Inject(forwardRef(() => EquipmentService)) private equipmentService: EquipmentService,
     private mailService: MailService
   ) {}
+
+/**
+ * Find official exhibitors for an event
+ * These are exhibitors with completed registrations or at least approved ones with selected stands
+ */
+async findOfficialExhibitors(eventId: string): Promise<Registration[]> {
+  this.logger.log(`Finding official exhibitors for event: ${eventId}`);
+  
+  try {
+    // Find either completed registrations or approved with stands selected
+    const registrations = await this.registrationModel.find({
+      event: new Types.ObjectId(eventId),
+      $or: [
+        { status: RegistrationStatus.COMPLETED },
+        { 
+          status: RegistrationStatus.APPROVED,
+          standSelectionCompleted: true,
+          stands: { $exists: true, $ne: [] }
+        }
+      ]
+    })
+    .populate({
+      path: 'exhibitor',
+      populate: {
+        path: 'company',
+        select: 'companyName companyLogoPath country sector companyDescription website',
+      }
+    })
+    .populate('stands', 'number area type basePrice status description') // Updated fields to match Stand entity
+    .sort({ createdAt: -1 })
+    .exec();
+    
+    return registrations;
+  } catch (error) {
+    this.logger.error(`Error finding official exhibitors for event ${eventId}: ${error.message}`);
+    return [];
+  }
+}
+
 
   /**
    * Create an initial registration for an event
@@ -89,6 +120,10 @@ export class RegistrationService {
       throw new BadRequestException(`Failed to create registration: ${error.message}`);
     }
   }
+  /**
+ * Find official exhibitors for an event
+ * These are exhibitors with completed registrations or at least approved ones with selected stands
+ */
 
   /**
    * Get all registrations
