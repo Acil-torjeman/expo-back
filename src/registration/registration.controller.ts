@@ -13,6 +13,7 @@ import {
   Logger,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { RegistrationService } from './registration.service';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
@@ -26,22 +27,30 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../user/entities/user.entity';
 import { IsPublic } from '../auth/decorators/public.decorator';
 import { RegistrationStatus } from './entities/registration.entity';
+import { ExhibitorService } from '../exhibitor/exhibitor.service';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import { Registration } from './entities/registration.entity';
 
 @Controller('registrations')
 export class RegistrationController {
   private readonly logger = new Logger(RegistrationController.name);
 
-  constructor(private readonly registrationService: RegistrationService) {}
+  constructor(
+    private readonly registrationService: RegistrationService,
+    private readonly exhibitorService: ExhibitorService,
+    @InjectModel(Registration.name) private readonly registrationModel: Model<Registration>,
+  ) {}
 
   @Post()
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.EXHIBITOR)
-@HttpCode(HttpStatus.CREATED)
-create(@Body() createRegistrationDto: CreateRegistrationDto, @Req() req) {
-  this.logger.log(`Creating registration for exhibitor: ${req.user.id}`);
-  // Pass the user ID from JWT token
-  return this.registrationService.create(createRegistrationDto, req.user.id);
-}
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.EXHIBITOR)
+  @HttpCode(HttpStatus.CREATED)
+  create(@Body() createRegistrationDto: CreateRegistrationDto, @Req() req) {
+    this.logger.log(`Creating registration for exhibitor: ${req.user.id}`);
+    // Pass the user ID from JWT token
+    return this.registrationService.create(createRegistrationDto, req.user.id);
+  }
 
   @Get()
   @UseGuards(JwtAuthGuard)
@@ -71,6 +80,41 @@ create(@Body() createRegistrationDto: CreateRegistrationDto, @Req() req) {
     return this.registrationService.findByExhibitor(req.user.id);
   }
 
+  @Get('check/:eventId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.EXHIBITOR)
+  @HttpCode(HttpStatus.OK)
+  async checkRegistration(@Param('eventId') eventId: string, @Req() req) {
+    this.logger.log(`Checking if exhibitor ${req.user.id} is registered for event ${eventId}`);
+    
+    try {
+      // First get the exhibitor linked to this user
+      const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
+      
+      if (!exhibitor) {
+        return { registered: false, registration: null };
+      }
+      
+      // Look for a registration for this exhibitor and event
+      const registrations = await this.registrationModel.find({
+        exhibitor: exhibitor._id,
+        event: new Types.ObjectId(eventId)
+      })
+      .populate('event', 'name startDate endDate')
+      .populate('exhibitor')
+      .exec();
+      
+      if (registrations.length > 0) {
+        return { registered: true, registration: registrations[0] };
+      }
+      
+      return { registered: false, registration: null };
+    } catch (error) {
+      this.logger.error(`Error checking registration: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to check registration status');
+    }
+  }
+
   @Get('event/:eventId')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ORGANIZER, UserRole.ADMIN)
@@ -87,12 +131,6 @@ create(@Body() createRegistrationDto: CreateRegistrationDto, @Req() req) {
     return this.registrationService.findOfficialExhibitors(eventId);
   }
 
-  @Get(':id')
-  @UseGuards(JwtAuthGuard)
-  findOne(@Param('id') id: string, @Req() req) {
-    this.logger.log(`Getting registration with ID: ${id}`);
-    return this.registrationService.findOne(id);
-  }
   @Get('event/:eventId/exhibitors')  // A simpler URL that might be easier to remember
   @IsPublic()
   @HttpCode(HttpStatus.OK)
@@ -130,6 +168,14 @@ create(@Body() createRegistrationDto: CreateRegistrationDto, @Req() req) {
       return [];
     }
   }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  findOne(@Param('id') id: string, @Req() req) {
+    this.logger.log(`Getting registration with ID: ${id}`);
+    return this.registrationService.findOne(id);
+  }
+
   @Post(':id/review')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ORGANIZER, UserRole.ADMIN)
