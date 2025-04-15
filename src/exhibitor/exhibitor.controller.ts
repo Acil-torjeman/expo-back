@@ -25,6 +25,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../user/entities/user.entity';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { File as MulterFile } from 'multer';
+import { IsPublic } from '../auth/decorators/public.decorator';
 
 @Controller('exhibitor')
 export class ExhibitorController {
@@ -109,8 +110,9 @@ export class ExhibitorController {
     return this.exhibitorService.findAll();
   }
 
+
   @Get(':id')
-  @UseGuards(JwtAuthGuard)
+  @IsPublic()
   findOne(@Param('id') id: string) {
     this.logger.log(`Getting exhibitor with ID: ${id}`);
     return this.exhibitorService.findOne(id);

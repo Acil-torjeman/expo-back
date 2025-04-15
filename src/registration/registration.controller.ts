@@ -34,13 +34,14 @@ export class RegistrationController {
   constructor(private readonly registrationService: RegistrationService) {}
 
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.EXHIBITOR)
-  @HttpCode(HttpStatus.CREATED)
-  create(@Body() createRegistrationDto: CreateRegistrationDto, @Req() req) {
-    this.logger.log(`Creating registration for exhibitor: ${req.user.id}`);
-    return this.registrationService.create(createRegistrationDto, req.user.id);
-  }
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.EXHIBITOR)
+@HttpCode(HttpStatus.CREATED)
+create(@Body() createRegistrationDto: CreateRegistrationDto, @Req() req) {
+  this.logger.log(`Creating registration for exhibitor: ${req.user.id}`);
+  // Pass the user ID from JWT token
+  return this.registrationService.create(createRegistrationDto, req.user.id);
+}
 
   @Get()
   @UseGuards(JwtAuthGuard)

@@ -1,7 +1,7 @@
 // src/exhibitor/exhibitor.service.ts
 import { Injectable, NotFoundException, Logger, BadRequestException, ConflictException, InternalServerErrorException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Exhibitor } from './entities/exhibitor.entity';
 import { CreateExhibitorDto } from './dto/create-exhibitor.dto';
 import { UpdateExhibitorDto } from './dto/update-exhibitor.dto';
@@ -182,24 +182,31 @@ export class ExhibitorService {
       .exec();
   }
 
-  /**
-   * Find exhibitor by ID
-   */
   async findOne(id: string): Promise<Exhibitor> {
     this.logger.log(`Finding exhibitor with ID: ${id}`);
-    const exhibitor = await this.exhibitorModel.findById(id)
-      .populate('user')
-      .populate('company')
-      .exec();
     
-    if (!exhibitor) {
-      this.logger.warn(`Exhibitor with ID ${id} not found`);
-      throw new NotFoundException(`Exhibitor with ID ${id} not found`);
+    // Ensure we're using a string ID, not a number
+    try {
+      const objectId = new Types.ObjectId(id.toString());
+      const exhibitor = await this.exhibitorModel.findById(objectId)
+        .populate('user', '-password -verificationToken -passwordResetToken -passwordResetExpires')
+        .populate('company')
+        .exec();
+      
+      if (!exhibitor) {
+        this.logger.warn(`Exhibitor with ID ${id} not found`);
+        throw new NotFoundException(`Exhibitor with ID ${id} not found`);
+      }
+      
+      // Log what we're returning
+      this.logger.log(`Found exhibitor with company: ${exhibitor.company ? 'yes' : 'no'}`);
+      
+      return exhibitor;
+    } catch (error) {
+      this.logger.error(`Error finding exhibitor ${id}: ${error.message}`);
+      throw error;
     }
-    
-    return exhibitor;
   }
-
   /**
    * Find exhibitor by user ID
    */

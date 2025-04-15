@@ -73,58 +73,70 @@ export class RegistrationService {
   }
 
   /**
-   * Create an initial registration for an event
-   */
-  async create(createRegistrationDto: CreateRegistrationDto, exhibitorId: string): Promise<Registration> {
-    this.logger.log(`Creating registration for exhibitor ${exhibitorId} to event ${createRegistrationDto.eventId}`);
+ * Create an initial registration for an event
+ */
+async create(createRegistrationDto: CreateRegistrationDto, userId: string): Promise<Registration> {
+  this.logger.log(`Creating registration for user ${userId} to event ${createRegistrationDto.eventId}`);
+  
+  try {
+    // Validate event
+    const event = await this.eventService.findOne(createRegistrationDto.eventId);
     
-    try {
-      // Validate event
-      const event = await this.eventService.findOne(createRegistrationDto.eventId);
-      
-      // Check if the event allows registrations
-      if (event.status !== 'published') {
-        throw new BadRequestException('Cannot register to an unpublished event');
-      }
-      
-      if (new Date(event.registrationDeadline) < new Date()) {
-        throw new BadRequestException('Registration deadline has passed for this event');
-      }
-      
-      // Check if the exhibitor already has a registration for this event
-      const existingRegistration = await this.registrationModel.findOne({
-        exhibitor: new Types.ObjectId(exhibitorId),
-        event: new Types.ObjectId(createRegistrationDto.eventId)
-      }).exec();
-      
-      if (existingRegistration) {
-        throw new BadRequestException('You have already registered for this event');
-      }
-      
-      // Create the registration
-      const registration = new this.registrationModel({
-        exhibitor: new Types.ObjectId(exhibitorId),
-        event: new Types.ObjectId(createRegistrationDto.eventId),
-        participationNote: createRegistrationDto.participationNote || '',
-        status: RegistrationStatus.PENDING,
-        stands: [],
-        equipment: [],
-        standSelectionCompleted: false,
-        equipmentSelectionCompleted: false
-      });
-      
-      // Save the registration
-      const savedRegistration = await registration.save() as Registration & { _id: Types.ObjectId };
-      
-      return this.findOne(savedRegistration._id.toString());
-    } catch (error) {
-      if (error instanceof BadRequestException || error instanceof NotFoundException) {
-        throw error;
-      }
-      this.logger.error(`Failed to create registration: ${error.message}`);
-      throw new BadRequestException(`Failed to create registration: ${error.message}`);
+    // Check if the event allows registrations
+    if (event.status !== 'published') {
+      throw new BadRequestException('Cannot register to an unpublished event');
     }
+    
+    if (new Date(event.registrationDeadline) < new Date()) {
+      throw new BadRequestException('Registration deadline has passed for this event');
+    }
+    
+    // First, get the exhibitor associated with this user
+    const exhibitor = await this.exhibitorService.findByUserId(userId);
+    
+    if (!exhibitor) {
+      throw new BadRequestException('No exhibitor profile found for this user');
+    }
+
+    if (!exhibitor._id) {
+      throw new InternalServerErrorException('Invalid exhibitor data');
+    }
+    
+    // Check if the exhibitor already has a registration for this event
+    const existingRegistration = await this.registrationModel.findOne({
+      exhibitor: new Types.ObjectId(exhibitor._id.toString()),
+      event: new Types.ObjectId(createRegistrationDto.eventId)
+    }).exec();
+    
+    if (existingRegistration) {
+      throw new BadRequestException('You have already registered for this event');
+    }
+    
+    // Create the registration with the EXHIBITOR ID (not user ID)
+    const registration = new this.registrationModel({
+      exhibitor: new Types.ObjectId(exhibitor._id.toString()),
+      event: new Types.ObjectId(createRegistrationDto.eventId),
+      participationNote: createRegistrationDto.participationNote || '',
+      status: RegistrationStatus.PENDING,
+      stands: [],
+      equipment: [],
+      standSelectionCompleted: false,
+      equipmentSelectionCompleted: false
+    });
+    
+    // Save the registration
+    const savedRegistration = await registration.save() as Registration & { _id: Types.ObjectId };
+    
+    return this.findOne(savedRegistration._id.toString());
+  } catch (error) {
+    // Error handling
+    if (error instanceof BadRequestException || error instanceof NotFoundException) {
+      throw error;
+    }
+    this.logger.error(`Failed to create registration: ${error.message}`);
+    throw new BadRequestException(`Failed to create registration: ${error.message}`);
   }
+}
 
   /**
    * Get all registrations
