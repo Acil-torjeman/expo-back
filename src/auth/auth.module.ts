@@ -14,6 +14,7 @@ import { UserModule } from '../user/user.module';
 import { User, UserSchema } from '../user/entities/user.entity';
 import { ExhibitorModule } from '../exhibitor/exhibitor.module';
 import { OrganizerModule } from '../organizer/organizer.module';
+import { RegistrationModule } from 'src/registration/registration.module';
 
 @Module({
   imports: [
@@ -26,7 +27,7 @@ import { OrganizerModule } from '../organizer/organizer.module';
     // Include Exhibitor and Organizer modules for signup with forwardRef to avoid circular dependency
     forwardRef(() => ExhibitorModule),
     forwardRef(() => OrganizerModule),
-    
+    forwardRef(() => RegistrationModule),
     // Include User model for direct operations
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },

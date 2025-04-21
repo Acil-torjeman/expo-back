@@ -9,6 +9,7 @@ import { UserModule } from '../user/user.module';
 import { PlanModule } from '../plan/plan.module';
 import { StandModule } from '../stand/stand.module';
 import { EquipmentModule } from '../equipment/equipment.module';
+import { RegistrationModule } from 'src/registration/registration.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { EquipmentModule } from '../equipment/equipment.module';
     forwardRef(() => PlanModule),
     forwardRef(() => StandModule),
     forwardRef(() => EquipmentModule),
+    forwardRef(() => RegistrationModule),
   ],
   controllers: [EventController],
   providers: [EventService],

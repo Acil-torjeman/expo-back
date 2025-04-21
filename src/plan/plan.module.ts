@@ -8,6 +8,7 @@ import { AuthModule } from '../auth/auth.module';
 import { UserModule } from '../user/user.module';
 import { EventModule } from '../event/event.module';
 import { StandModule } from '../stand/stand.module';
+import { RegistrationModule } from 'src/registration/registration.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { StandModule } from '../stand/stand.module';
     forwardRef(() => UserModule),
     forwardRef(() => EventModule),
     forwardRef(() => StandModule),
+    forwardRef(() => RegistrationModule),
   ],
   controllers: [PlanController],
   providers: [PlanService],

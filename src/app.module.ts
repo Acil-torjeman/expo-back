@@ -55,7 +55,7 @@ import { SeedModule } from './seed/seed-module';
     DashboardModule,
     UploadModule,
     TasksModule,
-    SeedModule, // Ajout du module de seeding
+    SeedModule, 
   ],
   controllers: [AppController],
   providers: [AppService],

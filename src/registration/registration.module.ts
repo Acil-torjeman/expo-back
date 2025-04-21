@@ -10,6 +10,7 @@ import { StandModule } from '../stand/stand.module';
 import { EquipmentModule } from '../equipment/equipment.module';
 import { MailModule } from '../mail/mail.module';
 import { AuthModule } from '../auth/auth.module';
+import { PlanModule } from 'src/plan/plan.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { AuthModule } from '../auth/auth.module';
     forwardRef(() => EventModule),
     forwardRef(() => ExhibitorModule),
     forwardRef(() => StandModule),
+    forwardRef(() => PlanModule),
     forwardRef(() => EquipmentModule),
     MailModule,
     forwardRef(() => AuthModule),

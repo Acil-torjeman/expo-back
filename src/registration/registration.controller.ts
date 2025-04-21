@@ -75,9 +75,30 @@ export class RegistrationController {
   @Get('my-registrations')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.EXHIBITOR)
-  findMyRegistrations(@Req() req) {
+  async findMyRegistrations(@Req() req) {
     this.logger.log(`Getting registrations for exhibitor: ${req.user.id}`);
-    return this.registrationService.findByExhibitor(req.user.id);
+    
+    try {
+      // D'abord, obtenir l'ID d'exposant à partir de l'ID utilisateur
+      const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
+      
+      if (!exhibitor) {
+        return [];
+      }
+      
+      // Ensuite, obtenir les inscriptions pour cet exposant
+      const registrations = await this.registrationModel.find({ 
+        exhibitor: exhibitor._id 
+      })
+      .populate('event')
+      .sort({ createdAt: -1 })
+      .exec();
+      
+      return registrations;
+    } catch (error) {
+      this.logger.error(`Error finding exhibitor registrations: ${error.message}`);
+      throw new InternalServerErrorException('Failed to fetch your registrations');
+    }
   }
 
   @Get('check/:eventId')
@@ -220,30 +241,23 @@ export class RegistrationController {
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.EXHIBITOR)
-  update(
+  async update(
     @Param('id') id: string,
     @Body() updateRegistrationDto: UpdateRegistrationDto,
     @Req() req
   ) {
     this.logger.log(`Updating registration ${id}`);
-    return this.registrationService.update(id, updateRegistrationDto, req.user.id);
-  }
-
-  @Post(':id/cancel')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.EXHIBITOR)
-  @HttpCode(HttpStatus.OK)
-  cancel(@Param('id') id: string, @Req() req) {
-    this.logger.log(`Cancelling registration ${id}`);
-    return this.registrationService.cancel(id, req.user.id);
-  }
-
-  @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id') id: string) {
-    this.logger.log(`Removing registration ${id}`);
-    return this.registrationService.remove(id);
+    try {
+      const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
+      
+      if (!exhibitor) {
+        return [];
+      }
+      
+      return this.registrationService.update(id, updateRegistrationDto, req.user.id);
+    } catch (error) {
+      this.logger.error(`Error updating registration: ${error.message}`);
+      throw new InternalServerErrorException('Failed to update registration');
+    }
   }
 }
