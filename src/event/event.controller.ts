@@ -108,6 +108,12 @@ export class EventController {
     return this.eventService.findOne(id);
   }
 
+  @Get(':id/stands/all')
+@UseGuards(JwtAuthGuard)
+findAllStands(@Param('id') id: string) {
+  this.logger.log(`Getting all stands for event: ${id}`);
+  return this.eventService.findStands(id);
+}
   @Post(':id/upload')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ORGANIZER)

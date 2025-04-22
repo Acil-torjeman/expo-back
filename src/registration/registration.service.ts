@@ -380,118 +380,119 @@ export class RegistrationService {
     return updatedRegistration;
   }
 
-  /**
-   * Select stands for a registration
-   */
-  async selectStands(
-    id: string,
-    selectStandsDto: SelectStandsDto,
-    exhibitorId: string
-  ): Promise<Registration> {
-    this.logger.log(`Selecting stands for registration ${id} by exhibitor ${exhibitorId}`);
-    
-    // Find the registration
-    const registration = await this.findOne(id);
-    
-    // Check if registration is approved
-    if (registration.status !== RegistrationStatus.APPROVED) {
-      throw new BadRequestException('Cannot select stands for a registration that is not approved');
-    }
-    
-    // Verify exhibitor owns this registration
-    // Get registration exhibitor ID as string
-    let regExhibitorId: string;
-    
-    if (registration.exhibitor) {
-      if (typeof registration.exhibitor === 'object' && registration.exhibitor._id) {
-        regExhibitorId = String(registration.exhibitor._id);
-      } else {
-        regExhibitorId = String(registration.exhibitor);
-      }
-    } else {
-      throw new NotFoundException('Registration has no associated exhibitor');
-    }
-    
-    // Convert the provided exhibitor ID to a clean string
-    const providedExhibitorId = String(exhibitorId).trim();
-    
-    // DEBUG: Log the IDs being compared
-    this.logger.debug(`Comparing registration exhibitor ID: "${regExhibitorId}" with provided exhibitor ID: "${providedExhibitorId}"`);
-    
-    if (regExhibitorId !== providedExhibitorId) {
-      throw new ForbiddenException('You do not have permission to update this registration');
-    }
-    
-    // Get event to verify stand availability
-    const eventId = typeof registration.event === 'object' && registration.event._id
-      ? registration.event._id.toString() 
-      : String(registration.event);
-    
-    // Check if the stands are available for this event
-    const availableStands = await this.eventService.findAvailableStands(eventId);
-    const availableStandIds = availableStands.map(s => String(s._id));
-    
-    // Check if all stands are available
-    for (const standId of selectStandsDto.standIds) {
-      if (!availableStandIds.includes(standId)) {
-        throw new BadRequestException(`Stand with ID ${standId} is not available`);
-      }
-    }
-    
-    // Convert stand IDs to ObjectIds
-    const standObjectIds = selectStandsDto.standIds.map(id => new Types.ObjectId(id));
-    
-    // Update stands for each stand, mark as reserved
-    for (const standId of selectStandsDto.standIds) {
-      await this.standService.reserveStand(standId, id);
-    }
-    
-    // Update the registration with selected stands
-    const updateData: any = {
-      stands: standObjectIds,
-    };
-    
-    // Update stand selection status if provided
-    if (selectStandsDto.selectionCompleted !== undefined) {
-      updateData.standSelectionCompleted = selectStandsDto.selectionCompleted;
-      
-      // If both stand and equipment selection are completed, mark registration as completed
-      if (selectStandsDto.selectionCompleted && registration.equipmentSelectionCompleted) {
-        updateData.status = RegistrationStatus.COMPLETED;
-      }
-    }
-    
-    // Update the registration
-    const updatedRegistration = await this.registrationModel.findByIdAndUpdate(
-      id,
-      { $set: updateData },
-      { new: true }
-    )
-    .populate({
-      path: 'exhibitor',
-      populate: [
-        { 
-          path: 'user',
-          select: 'username email'
-        },
-        { 
-          path: 'company',
-          select: 'companyName companyLogoPath country sector subsector'
-        }
-      ]
-    })
-    .populate('event', 'name startDate endDate location type')
-    .populate('stands', 'number area type basePrice status')
-    .populate('equipment', 'name description price type')
-    .populate('reviewedBy', 'username email')
-    .exec();
-    
-    if (!updatedRegistration) {
-      throw new NotFoundException(`Registration with ID ${id} not found`);
-    }
-    
-    return updatedRegistration;
+ /**
+ * Select stands for a registration
+ */
+async selectStands(
+  id: string,
+  selectStandsDto: SelectStandsDto,
+  exhibitorId: string
+): Promise<Registration> {
+  this.logger.log(`Selecting stands for registration ${id} by exhibitor ${exhibitorId}`);
+  
+  // Find the registration
+  const registration = await this.findOne(id);
+  
+  // Check if registration is approved
+  if (registration.status !== RegistrationStatus.APPROVED) {
+    throw new BadRequestException('Cannot select stands for a registration that is not approved');
   }
+  
+  // Verify exhibitor owns this registration
+  let regExhibitorId: string;
+  
+  if (registration.exhibitor) {
+    if (typeof registration.exhibitor === 'object' && registration.exhibitor._id) {
+      regExhibitorId = String(registration.exhibitor._id);
+    } else {
+      regExhibitorId = String(registration.exhibitor);
+    }
+  } else {
+    throw new NotFoundException('Registration has no associated exhibitor');
+  }
+  
+  // Convert the provided exhibitor ID to a clean string
+  const providedExhibitorId = String(exhibitorId).trim();
+  
+  // DEBUG: Log the IDs being compared
+  this.logger.debug(`Comparing registration exhibitor ID: "${regExhibitorId}" with provided exhibitor ID: "${providedExhibitorId}"`);
+  
+  if (regExhibitorId !== providedExhibitorId) {
+    throw new ForbiddenException('You do not have permission to update this registration');
+  }
+  
+  // Get event to verify stand availability
+  const eventId = typeof registration.event === 'object' && registration.event._id
+    ? registration.event._id.toString() 
+    : String(registration.event);
+  
+  // Get available stands for this event (including ones this user already selected)
+  const allStands = await this.eventService.findStands(eventId);
+  
+  // Get previously selected stand IDs for this registration
+  const previouslySelectedStands = registration.stands ? 
+    registration.stands.map(stand => typeof stand === 'object' && stand._id ? 
+      String(stand._id) : String(stand)) : [];
+  
+  // Check if the selected stands are available or already selected by this user
+  for (const standId of selectStandsDto.standIds) {
+    // Find the stand in all stands
+    const stand = allStands.find(s => String(s._id) === standId);
+    
+    if (!stand) {
+      throw new BadRequestException(`Stand with ID ${standId} not found`);
+    }
+    
+    // Only check availability if the stand wasn't previously selected by this user
+    if (!previouslySelectedStands.includes(standId) && stand.status !== 'available') {
+      throw new BadRequestException(`Stand with ID ${standId} is not available`);
+    }
+  }
+  
+  // Convert stand IDs to ObjectIds
+  const standObjectIds = selectStandsDto.standIds.map(id => new Types.ObjectId(id));
+  
+  // Update the registration with selected stands
+  const updateData: any = {
+    stands: standObjectIds,
+  };
+  
+  // Update stand selection status if provided
+  if (selectStandsDto.selectionCompleted !== undefined) {
+    updateData.standSelectionCompleted = selectStandsDto.selectionCompleted;
+  }
+  
+  // Update the registration
+  const updatedRegistration = await this.registrationModel.findByIdAndUpdate(
+    id,
+    { $set: updateData },
+    { new: true }
+  )
+  .populate({
+    path: 'exhibitor',
+    populate: [
+      { 
+        path: 'user',
+        select: 'username email'
+      },
+      { 
+        path: 'company',
+        select: 'companyName companyLogoPath country sector subsector'
+      }
+    ]
+  })
+  .populate('event', 'name startDate endDate location type')
+  .populate('stands', 'number area type basePrice status')
+  .populate('equipment', 'name description price type')
+  .populate('reviewedBy', 'username email')
+  .exec();
+  
+  if (!updatedRegistration) {
+    throw new NotFoundException(`Registration with ID ${id} not found`);
+  }
+  
+  return updatedRegistration;
+}
 
   /**
    * Select equipment for a registration
@@ -603,7 +604,101 @@ export class RegistrationService {
     
     return updatedRegistration;
   }
-
+  
+/**
+ * Complete a registration
+ */
+async complete(id: string, exhibitorId: string): Promise<Registration> {
+  this.logger.log(`Completing registration ${id}`);
+  
+  // Find the registration
+  const registration = await this.findOne(id);
+  
+  // Check if registration is approved
+  if (registration.status !== RegistrationStatus.APPROVED) {
+    throw new BadRequestException('Cannot complete a registration that is not approved');
+  }
+  
+  // Check if stands have been selected
+  if (!registration.stands || registration.stands.length === 0) {
+    throw new BadRequestException('Cannot complete registration without selecting stands');
+  }
+  
+  // Verify exhibitor owns this registration
+  let regExhibitorId: string;
+  
+  if (registration.exhibitor) {
+    if (typeof registration.exhibitor === 'object' && registration.exhibitor._id) {
+      regExhibitorId = String(registration.exhibitor._id);
+    } else {
+      regExhibitorId = String(registration.exhibitor);
+    }
+  } else {
+    throw new NotFoundException('Registration has no associated exhibitor');
+  }
+  
+  // Convert the provided exhibitor ID to a clean string
+  const providedExhibitorId = String(exhibitorId).trim();
+  
+  if (regExhibitorId !== providedExhibitorId) {
+    throw new ForbiddenException('You do not have permission to complete this registration');
+  }
+  
+  // Now actually reserve the stands
+  if (registration.stands && registration.stands.length > 0) {
+    for (const stand of registration.stands) {
+      const standId = typeof stand === 'object' && stand._id 
+        ? String(stand._id) 
+        : String(stand);
+      
+      try {
+        // This is where we actually mark the stands as reserved
+        await this.standService.reserveStand(standId, id);
+      } catch (error) {
+        // If a stand has been taken by someone else in the meantime
+        this.logger.error(`Failed to reserve stand ${standId}: ${error.message}`);
+        throw new BadRequestException(`Stand ${standId} is no longer available. Please select another stand.`);
+      }
+    }
+  }
+  
+  // Update the registration status
+  const updatedRegistration = await this.registrationModel.findByIdAndUpdate(
+    id,
+    { 
+      $set: { 
+        status: RegistrationStatus.COMPLETED,
+        standSelectionCompleted: true,
+        equipmentSelectionCompleted: true
+      } 
+    },
+    { new: true }
+  )
+  .populate({
+    path: 'exhibitor',
+    populate: [
+      { 
+        path: 'user',
+        select: 'username email'
+      },
+      { 
+        path: 'company',
+        select: 'companyName companyLogoPath country sector subsector'
+      }
+    ]
+  })
+  .populate('event', 'name startDate endDate location type')
+  .populate('stands', 'number area type basePrice status')
+  .populate('equipment', 'name description price type')
+  .populate('reviewedBy', 'username email')
+  .exec();
+  
+  if (!updatedRegistration) {
+    throw new NotFoundException(`Registration with ID ${id} not found`);
+  }
+  
+  return updatedRegistration;
+}
   /**
    * Update a registration
    */

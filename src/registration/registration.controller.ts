@@ -368,6 +368,28 @@ export class RegistrationController {
     }
   }
 
+  @Post(':id/complete')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.EXHIBITOR)
+async complete(@Param('id') id: string, @Req() req) {
+  this.logger.log(`Completing registration ${id}`);
+  
+  try {
+    // Get exhibitor ID from user ID
+    const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
+    
+    if (!exhibitor) {
+      throw new NotFoundException('Exhibitor profile not found for this user');
+    }
+    
+    // Complete the registration
+    const exhibitorId = (exhibitor._id as unknown as Types.ObjectId).toString();
+    return await this.registrationService.complete(id, exhibitorId);
+  } catch (error) {
+    this.logger.error(`Error completing registration: ${error.message}`);
+    throw error;
+  }
+}
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
