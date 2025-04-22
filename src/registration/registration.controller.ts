@@ -7,13 +7,15 @@ import {
   Patch,
   Param,
   Delete,
-  Req,
   UseGuards,
+  Req,
   Query,
   Logger,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   InternalServerErrorException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { RegistrationService } from './registration.service';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
@@ -26,11 +28,11 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../user/entities/user.entity';
 import { IsPublic } from '../auth/decorators/public.decorator';
-import { RegistrationStatus } from './entities/registration.entity';
 import { ExhibitorService } from '../exhibitor/exhibitor.service';
+import { Registration } from './entities/registration.entity';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Registration } from './entities/registration.entity';
+import { Exhibitor } from '../exhibitor/entities/exhibitor.entity';
 
 @Controller('registrations')
 export class RegistrationController {
@@ -46,15 +48,21 @@ export class RegistrationController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.EXHIBITOR)
   @HttpCode(HttpStatus.CREATED)
-  create(@Body() createRegistrationDto: CreateRegistrationDto, @Req() req) {
-    this.logger.log(`Creating registration for exhibitor: ${req.user.id}`);
-    // Pass the user ID from JWT token
-    return this.registrationService.create(createRegistrationDto, req.user.id);
+  async create(@Body() createRegistrationDto: CreateRegistrationDto, @Req() req) {
+    this.logger.log(`Creating registration for user: ${req.user.id}`);
+    
+    try {
+      // Create registration using user ID
+      return await this.registrationService.create(createRegistrationDto, req.user.id);
+    } catch (error) {
+      this.logger.error(`Error creating registration: ${error.message}`);
+      throw error;
+    }
   }
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  findAll(
+  async findAll(
     @Req() req,
     @Query('exhibitorId') exhibitorId?: string,
     @Query('eventId') eventId?: string,
@@ -66,7 +74,15 @@ export class RegistrationController {
     
     // Exhibitors can only view their own registrations
     if (req.user.role === UserRole.EXHIBITOR) {
-      filters.exhibitorId = req.user.id;
+      try {
+        const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
+        if (exhibitor) {
+          filters.exhibitorId = (exhibitor._id as unknown as Types.ObjectId).toString();
+        }
+      } catch (error) {
+        this.logger.error(`Error finding exhibitor: ${error.message}`);
+        return [];
+      }
     }
     
     return this.registrationService.findAll(filters);
@@ -76,21 +92,23 @@ export class RegistrationController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.EXHIBITOR)
   async findMyRegistrations(@Req() req) {
-    this.logger.log(`Getting registrations for exhibitor: ${req.user.id}`);
+    this.logger.log(`Getting registrations for user: ${req.user.id}`);
     
     try {
-      // D'abord, obtenir l'ID d'exposant à partir de l'ID utilisateur
+      // Get exhibitor ID from user ID
       const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
       
       if (!exhibitor) {
         return [];
       }
       
-      // Ensuite, obtenir les inscriptions pour cet exposant
+      // Get registrations for this exhibitor
       const registrations = await this.registrationModel.find({ 
-        exhibitor: exhibitor._id 
+        exhibitor: exhibitor._id as unknown as Types.ObjectId 
       })
       .populate('event')
+      .populate('stands')
+      .populate('equipment')
       .sort({ createdAt: -1 })
       .exec();
       
@@ -106,7 +124,7 @@ export class RegistrationController {
   @Roles(UserRole.EXHIBITOR)
   @HttpCode(HttpStatus.OK)
   async checkRegistration(@Param('eventId') eventId: string, @Req() req) {
-    this.logger.log(`Checking if exhibitor ${req.user.id} is registered for event ${eventId}`);
+    this.logger.log(`Checking if user ${req.user.id} is registered for event ${eventId}`);
     
     try {
       // First get the exhibitor linked to this user
@@ -118,7 +136,7 @@ export class RegistrationController {
       
       // Look for a registration for this exhibitor and event
       const registrations = await this.registrationModel.find({
-        exhibitor: exhibitor._id,
+        exhibitor: exhibitor._id as unknown as Types.ObjectId,
         event: new Types.ObjectId(eventId)
       })
       .populate('event', 'name startDate endDate')
@@ -131,7 +149,7 @@ export class RegistrationController {
       
       return { registered: false, registration: null };
     } catch (error) {
-      this.logger.error(`Error checking registration: ${error.message}`, error.stack);
+      this.logger.error(`Error checking registration: ${error.message}`);
       throw new InternalServerErrorException('Failed to check registration status');
     }
   }
@@ -152,7 +170,7 @@ export class RegistrationController {
     return this.registrationService.findOfficialExhibitors(eventId);
   }
 
-  @Get('event/:eventId/exhibitors')  // A simpler URL that might be easier to remember
+  @Get('event/:eventId/exhibitors')
   @IsPublic()
   @HttpCode(HttpStatus.OK)
   async getEventExhibitors(@Param('eventId') eventId: string) {
@@ -161,7 +179,7 @@ export class RegistrationController {
     try {
       const registrations = await this.registrationService.findOfficialExhibitors(eventId);
       
-      // Map to a simplified response structure if needed
+      // Map to a simplified response structure
       return registrations.map(reg => {
         const company = reg.exhibitor?.company;
         return {
@@ -192,72 +210,176 @@ export class RegistrationController {
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  findOne(@Param('id') id: string, @Req() req) {
+  async findOne(@Param('id') id: string, @Req() req) {
     this.logger.log(`Getting registration with ID: ${id}`);
-    return this.registrationService.findOne(id);
+    
+    try {
+      const registration = await this.registrationService.findOne(id);
+      
+      // If the user is an exhibitor, verify they own this registration
+      if (req.user.role === UserRole.EXHIBITOR) {
+        const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
+        
+        if (!exhibitor) {
+          throw new NotFoundException('Exhibitor profile not found');
+        }
+        
+        const exhibitorId = (exhibitor._id as unknown as Types.ObjectId).toString();
+        const registrationExhibitorId = typeof registration.exhibitor === 'object' && registration.exhibitor?._id
+          ? (registration.exhibitor._id as unknown as Types.ObjectId).toString() 
+          : String(registration.exhibitor);
+        
+        if (exhibitorId !== registrationExhibitorId) {
+          throw new ForbiddenException('You do not have permission to view this registration');
+        }
+      }
+      
+      return registration;
+    } catch (error) {
+      this.logger.error(`Error finding registration: ${error.message}`);
+      throw error;
+    }
   }
 
   @Post(':id/review')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ORGANIZER, UserRole.ADMIN)
-  review(
+  async review(
     @Param('id') id: string,
     @Body() reviewRegistrationDto: ReviewRegistrationDto,
     @Req() req
   ) {
     this.logger.log(`Reviewing registration ${id} with status ${reviewRegistrationDto.status}`);
-    return this.registrationService.reviewRegistration(
-      id,
-      reviewRegistrationDto,
-      req.user.id,
-      req.user.role
-    );
+    
+    try {
+      return await this.registrationService.reviewRegistration(
+        id,
+        reviewRegistrationDto,
+        req.user.id,
+        req.user.role
+      );
+    } catch (error) {
+      this.logger.error(`Error reviewing registration: ${error.message}`);
+      throw error;
+    }
   }
 
   @Post(':id/select-stands')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.EXHIBITOR)
-  selectStands(
+  async selectStands(
     @Param('id') id: string,
     @Body() selectStandsDto: SelectStandsDto,
     @Req() req
   ) {
     this.logger.log(`Selecting stands for registration ${id}`);
-    return this.registrationService.selectStands(id, selectStandsDto, req.user.id);
+    
+    try {
+      // Get exhibitor ID from user ID - this is the key fix
+      const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
+      
+      if (!exhibitor) {
+        throw new NotFoundException('Exhibitor profile not found for this user');
+      }
+      
+      // Pass the exhibitor ID to the service, not the user ID
+      return await this.registrationService.selectStands(id, selectStandsDto, (exhibitor._id as unknown as Types.ObjectId).toString());
+    } catch (error) {
+      this.logger.error(`Error selecting stands: ${error.message}`);
+      throw error;
+    }
   }
 
   @Post(':id/select-equipment')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.EXHIBITOR)
-  selectEquipment(
+  async selectEquipment(
     @Param('id') id: string,
     @Body() selectEquipmentDto: SelectEquipmentDto,
     @Req() req
   ) {
     this.logger.log(`Selecting equipment for registration ${id}`);
-    return this.registrationService.selectEquipment(id, selectEquipmentDto, req.user.id);
+    
+    try {
+      // Get exhibitor ID from user ID - same fix needed here
+      const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
+      
+      if (!exhibitor) {
+        throw new NotFoundException('Exhibitor profile not found for this user');
+      }
+      
+      // Pass the exhibitor ID to the service, not the user ID
+      return await this.registrationService.selectEquipment(id, selectEquipmentDto, (exhibitor._id as unknown as Types.ObjectId).toString());
+    } catch (error) {
+      this.logger.error(`Error selecting equipment: ${error.message}`);
+      throw error;
+    }
+  }
+
+  @Post(':id/cancel')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.EXHIBITOR)
+  async cancel(@Param('id') id: string, @Req() req) {
+    this.logger.log(`Cancelling registration ${id}`);
+    
+    try {
+      // Get exhibitor ID from user ID
+      const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
+      
+      if (!exhibitor) {
+        throw new NotFoundException('Exhibitor profile not found for this user');
+      }
+      
+      // Pass the exhibitor ID to the service
+      return await this.registrationService.cancel(id, (exhibitor._id as unknown as Types.ObjectId).toString());
+    } catch (error) {
+      this.logger.error(`Error cancelling registration: ${error.message}`);
+      throw error;
+    }
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.EXHIBITOR)
+  @UseGuards(JwtAuthGuard)
   async update(
     @Param('id') id: string,
     @Body() updateRegistrationDto: UpdateRegistrationDto,
     @Req() req
   ) {
     this.logger.log(`Updating registration ${id}`);
+    
     try {
-      const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
-      
-      if (!exhibitor) {
-        return [];
+      // For exhibitors, verify ownership
+      if (req.user.role === UserRole.EXHIBITOR) {
+        const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
+        
+        if (!exhibitor) {
+          throw new NotFoundException('Exhibitor profile not found');
+        }
+        
+        // Use exhibitor ID for the update, not user ID
+        return await this.registrationService.update(id, updateRegistrationDto, (exhibitor._id as unknown as Types.ObjectId).toString());
       }
       
-      return this.registrationService.update(id, updateRegistrationDto, req.user.id);
+      // For admin and organizers, use their user ID
+      return await this.registrationService.update(id, updateRegistrationDto, req.user.id);
     } catch (error) {
       this.logger.error(`Error updating registration: ${error.message}`);
-      throw new InternalServerErrorException('Failed to update registration');
+      throw error;
+    }
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Param('id') id: string) {
+    this.logger.log(`Removing registration ${id}`);
+    
+    try {
+      await this.registrationService.remove(id);
+    } catch (error) {
+      this.logger.error(`Error removing registration: ${error.message}`);
+      throw error;
     }
   }
 }

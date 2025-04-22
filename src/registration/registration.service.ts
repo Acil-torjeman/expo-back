@@ -73,70 +73,73 @@ export class RegistrationService {
   }
 
   /**
- * Create an initial registration for an event
- */
-async create(createRegistrationDto: CreateRegistrationDto, userId: string): Promise<Registration> {
-  this.logger.log(`Creating registration for user ${userId} to event ${createRegistrationDto.eventId}`);
-  
-  try {
-    // Validate event
-    const event = await this.eventService.findOne(createRegistrationDto.eventId);
+   * Create an initial registration for an event
+   */
+  async create(createRegistrationDto: CreateRegistrationDto, userId: string): Promise<Registration> {
+    this.logger.log(`Creating registration for user ${userId} to event ${createRegistrationDto.eventId}`);
     
-    // Check if the event allows registrations
-    if (event.status !== 'published') {
-      throw new BadRequestException('Cannot register to an unpublished event');
-    }
-    
-    if (new Date(event.registrationDeadline) < new Date()) {
-      throw new BadRequestException('Registration deadline has passed for this event');
-    }
-    
-    // First, get the exhibitor associated with this user
-    const exhibitor = await this.exhibitorService.findByUserId(userId);
-    
-    if (!exhibitor) {
-      throw new BadRequestException('No exhibitor profile found for this user');
-    }
+    try {
+      // Validate event
+      const event = await this.eventService.findOne(createRegistrationDto.eventId);
+      
+      // Check if the event allows registrations
+      if (event.status !== 'published') {
+        throw new BadRequestException('Cannot register to an unpublished event');
+      }
+      
+      if (new Date(event.registrationDeadline) < new Date()) {
+        throw new BadRequestException('Registration deadline has passed for this event');
+      }
+      
+      // First, get the exhibitor associated with this user
+      const exhibitor = await this.exhibitorService.findByUserId(userId);
+      
+      if (!exhibitor) {
+        throw new BadRequestException('No exhibitor profile found for this user');
+      }
 
-    if (!exhibitor._id) {
-      throw new InternalServerErrorException('Invalid exhibitor data');
+      if (!exhibitor._id) {
+        throw new InternalServerErrorException('Invalid exhibitor data');
+      }
+      
+      // Ensure exhibitor ID is properly converted to ObjectId
+      const exhibitorId = new Types.ObjectId(String(exhibitor._id));
+      
+      // Check if the exhibitor already has a registration for this event
+      const existingRegistration = await this.registrationModel.findOne({
+        exhibitor: exhibitorId,
+        event: new Types.ObjectId(createRegistrationDto.eventId)
+      }).exec();
+      
+      if (existingRegistration) {
+        throw new BadRequestException('You have already registered for this event');
+      }
+      
+      // Create the registration with the EXHIBITOR ID (not user ID)
+      const registration = new this.registrationModel({
+        exhibitor: exhibitorId,
+        event: new Types.ObjectId(createRegistrationDto.eventId),
+        participationNote: createRegistrationDto.participationNote || '',
+        status: RegistrationStatus.PENDING,
+        stands: [],
+        equipment: [],
+        standSelectionCompleted: false,
+        equipmentSelectionCompleted: false
+      });
+      
+      // Save the registration
+      const savedRegistration = await registration.save() as Registration & { _id: Types.ObjectId };
+      
+      return this.findOne(savedRegistration._id.toString());
+    } catch (error) {
+      // Error handling
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(`Failed to create registration: ${error.message}`);
+      throw new BadRequestException(`Failed to create registration: ${error.message}`);
     }
-    
-    // Check if the exhibitor already has a registration for this event
-    const existingRegistration = await this.registrationModel.findOne({
-      exhibitor: new Types.ObjectId(exhibitor._id.toString()),
-      event: new Types.ObjectId(createRegistrationDto.eventId)
-    }).exec();
-    
-    if (existingRegistration) {
-      throw new BadRequestException('You have already registered for this event');
-    }
-    
-    // Create the registration with the EXHIBITOR ID (not user ID)
-    const registration = new this.registrationModel({
-      exhibitor: new Types.ObjectId(exhibitor._id.toString()),
-      event: new Types.ObjectId(createRegistrationDto.eventId),
-      participationNote: createRegistrationDto.participationNote || '',
-      status: RegistrationStatus.PENDING,
-      stands: [],
-      equipment: [],
-      standSelectionCompleted: false,
-      equipmentSelectionCompleted: false
-    });
-    
-    // Save the registration
-    const savedRegistration = await registration.save() as Registration & { _id: Types.ObjectId };
-    
-    return this.findOne(savedRegistration._id.toString());
-  } catch (error) {
-    // Error handling
-    if (error instanceof BadRequestException || error instanceof NotFoundException) {
-      throw error;
-    }
-    this.logger.error(`Failed to create registration: ${error.message}`);
-    throw new BadRequestException(`Failed to create registration: ${error.message}`);
   }
-}
 
   /**
    * Get all registrations
@@ -385,7 +388,7 @@ async create(createRegistrationDto: CreateRegistrationDto, userId: string): Prom
     selectStandsDto: SelectStandsDto,
     exhibitorId: string
   ): Promise<Registration> {
-    this.logger.log(`Selecting stands for registration ${id}`);
+    this.logger.log(`Selecting stands for registration ${id} by exhibitor ${exhibitorId}`);
     
     // Find the registration
     const registration = await this.findOne(id);
@@ -396,22 +399,37 @@ async create(createRegistrationDto: CreateRegistrationDto, userId: string): Prom
     }
     
     // Verify exhibitor owns this registration
-    const regExhibitorId = registration.exhibitor._id 
-      ? registration.exhibitor._id.toString() 
-      : registration.exhibitor.toString();
+    // Get registration exhibitor ID as string
+    let regExhibitorId: string;
     
-    if (regExhibitorId !== exhibitorId) {
+    if (registration.exhibitor) {
+      if (typeof registration.exhibitor === 'object' && registration.exhibitor._id) {
+        regExhibitorId = String(registration.exhibitor._id);
+      } else {
+        regExhibitorId = String(registration.exhibitor);
+      }
+    } else {
+      throw new NotFoundException('Registration has no associated exhibitor');
+    }
+    
+    // Convert the provided exhibitor ID to a clean string
+    const providedExhibitorId = String(exhibitorId).trim();
+    
+    // DEBUG: Log the IDs being compared
+    this.logger.debug(`Comparing registration exhibitor ID: "${regExhibitorId}" with provided exhibitor ID: "${providedExhibitorId}"`);
+    
+    if (regExhibitorId !== providedExhibitorId) {
       throw new ForbiddenException('You do not have permission to update this registration');
     }
     
     // Get event to verify stand availability
-    const eventId = registration.event._id 
+    const eventId = typeof registration.event === 'object' && registration.event._id
       ? registration.event._id.toString() 
-      : registration.event.toString();
+      : String(registration.event);
     
     // Check if the stands are available for this event
     const availableStands = await this.eventService.findAvailableStands(eventId);
-    const availableStandIds = availableStands.map(s => (s as { _id: Types.ObjectId })._id.toString());
+    const availableStandIds = availableStands.map(s => String(s._id));
     
     // Check if all stands are available
     for (const standId of selectStandsDto.standIds) {
@@ -494,23 +512,37 @@ async create(createRegistrationDto: CreateRegistrationDto, userId: string): Prom
       throw new BadRequestException('Cannot select equipment for a registration that is not approved');
     }
     
-    // Verify exhibitor owns this registration
-    const regExhibitorId = registration.exhibitor._id 
-      ? registration.exhibitor._id.toString() 
-      : registration.exhibitor.toString();
+    // Verify exhibitor owns this registration - using same pattern as selectStands
+    let regExhibitorId: string;
     
-    if (regExhibitorId !== exhibitorId) {
+    if (registration.exhibitor) {
+      if (typeof registration.exhibitor === 'object' && registration.exhibitor._id) {
+        regExhibitorId = String(registration.exhibitor._id);
+      } else {
+        regExhibitorId = String(registration.exhibitor);
+      }
+    } else {
+      throw new NotFoundException('Registration has no associated exhibitor');
+    }
+    
+    // Convert the provided exhibitor ID to a clean string
+    const providedExhibitorId = String(exhibitorId).trim();
+    
+    // DEBUG: Log the IDs being compared
+    this.logger.debug(`Comparing registration exhibitor ID: "${regExhibitorId}" with provided exhibitor ID: "${providedExhibitorId}"`);
+    
+    if (regExhibitorId !== providedExhibitorId) {
       throw new ForbiddenException('You do not have permission to update this registration');
     }
     
     // Get event to verify equipment availability
-    const eventId = registration.event._id 
+    const eventId = typeof registration.event === 'object' && registration.event._id
       ? registration.event._id.toString() 
-      : registration.event.toString();
+      : String(registration.event);
     
     // Check if the equipment is available for this event
     const availableEquipment = await this.equipmentService.getAvailableForEvent(eventId);
-    const availableEquipmentIds = availableEquipment.map(e => (e as { _id: Types.ObjectId })._id.toString());
+    const availableEquipmentIds = availableEquipment.map(e => String(e._id));
     
     // If equipment IDs are provided, validate them
     if (selectEquipmentDto.equipmentIds.length > 0) {
@@ -640,19 +672,33 @@ async create(createRegistrationDto: CreateRegistrationDto, userId: string): Prom
       throw new BadRequestException('Cannot cancel a registration that is not pending or approved');
     }
     
-    // Verify exhibitor owns this registration
-    const regExhibitorId = registration.exhibitor._id 
-      ? registration.exhibitor._id.toString() 
-      : registration.exhibitor.toString();
+    // Verify exhibitor owns this registration - using same pattern as selectStands
+    let regExhibitorId: string;
     
-    if (regExhibitorId !== exhibitorId) {
+    if (registration.exhibitor) {
+      if (typeof registration.exhibitor === 'object' && registration.exhibitor._id) {
+        regExhibitorId = String(registration.exhibitor._id);
+      } else {
+        regExhibitorId = String(registration.exhibitor);
+      }
+    } else {
+      throw new NotFoundException('Registration has no associated exhibitor');
+    }
+    
+    // Convert the provided exhibitor ID to a clean string
+    const providedExhibitorId = String(exhibitorId).trim();
+    
+    if (regExhibitorId !== providedExhibitorId) {
       throw new ForbiddenException('You do not have permission to cancel this registration');
     }
     
     // Free up any reserved stands
     if (registration.stands && registration.stands.length > 0) {
       for (const stand of registration.stands) {
-        const standId = stand._id ? stand._id.toString() : stand.toString();
+        const standId = typeof stand === 'object' && stand._id
+          ? String(stand._id)
+          : String(stand);
+          
         await this.standService.freeStand(standId);
       }
     }
@@ -705,7 +751,10 @@ async create(createRegistrationDto: CreateRegistrationDto, userId: string): Prom
     // Free up any reserved stands
     if (registration.stands && registration.stands.length > 0) {
       for (const stand of registration.stands) {
-        const standId = stand._id ? stand._id.toString() : stand.toString();
+        const standId = typeof stand === 'object' && stand._id
+          ? String(stand._id)
+          : String(stand);
+          
         await this.standService.freeStand(standId);
       }
     }
