@@ -365,39 +365,44 @@ export class StandService {
     return updatedStand;
   }
 
-  /**
-   * Free a reserved stand
-   */
-  async freeStand(id: string): Promise<Stand> {
-    this.logger.log(`Freeing stand ${id}`);
-    
-    // Get the stand
-    const stand = await this.findOne(id);
-    
-    // Check if stand is reserved
-    if (stand.status !== 'reserved') {
-      // Already free - no change needed
-      return stand;
-    }
-    
-    // Update the stand status
-    const updatedStand = await this.standModel.findByIdAndUpdate(
-      id,
-      { 
-        status: 'available',
-        $unset: { reservation: 1 }
-      },
-      { new: true }
-    )
-    .populate('plan')
-    .exec();
-    
-    if (!updatedStand) {
-      throw new NotFoundException(`Stand with ID ${id} not found`);
-    }
-    
-    return updatedStand;
+ /**
+ * Free a reserved stand
+ */
+async freeStand(id: string): Promise<Stand> {
+  this.logger.log(`Freeing stand ${id}`);
+  
+  // Get the stand
+  const stand = await this.findOne(id);
+  
+  // If stand is not reserved, just return it
+  if (stand.status !== StandStatus.RESERVED) {
+    this.logger.log(`Stand ${id} is not reserved, no action needed`);
+    return stand;
   }
+  
+  // Update the stand status to available
+  const updatedStand = await this.standModel.findByIdAndUpdate(
+    id,
+    { 
+      status: StandStatus.AVAILABLE,
+      $unset: { 
+        reservation: 1,
+        exhibitorId: 1,
+        eventId: 1
+      }
+    },
+    { new: true }
+  )
+  .populate('plan')
+  .exec();
+  
+  if (!updatedStand) {
+    throw new NotFoundException(`Stand with ID ${id} not found`);
+  }
+  
+  this.logger.log(`Stand ${id} has been freed and is now available`);
+  return updatedStand;
+}
 
   /**
    * Remove stand
