@@ -110,6 +110,16 @@ export class EquipmentController {
     throw new BadRequestException(`Invalid ID format: ${id}`);
   }
 
+  @Get(':id/available-quantity/:eventId')
+@UseGuards(JwtAuthGuard)
+async getAvailableQuantity(
+  @Param('id') id: string,
+  @Param('eventId') eventId: string
+) {
+  this.logger.log(`Getting available quantity for equipment ${id} in event ${eventId}`);
+  const quantity = await this.equipmentService.getAvailableQuantity(id, eventId);
+  return { availableQuantity: quantity };
+}
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ORGANIZER)

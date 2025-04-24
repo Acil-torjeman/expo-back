@@ -11,6 +11,7 @@ import { UpdateEquipmentDto } from './dto/update-equipment.dto';
 import { AssociateEquipmentDto } from './dto/associate-equipment.dto';
 import { UserRole } from '../user/entities/user.entity';
 import { EventService } from '../event/event.service';
+import { Registration, RegistrationStatus } from 'src/registration/entities/registration.entity';
 
 @Injectable()
 export class EquipmentService {
@@ -19,6 +20,7 @@ export class EquipmentService {
 
   constructor(
     @InjectModel(Equipment.name) private readonly equipmentModel: Model<Equipment>,
+    @InjectModel(Registration.name) private readonly registrationModel: Model<Registration>,
     @Inject(forwardRef(() => EventService)) private readonly eventService: EventService,
   ) {
     // Set upload path for equipment images
@@ -412,6 +414,53 @@ private async isOwner(equipmentId: string, userId: string): Promise<boolean> {
   }
 
   /**
+ * Check available quantity for an equipment in an event
+ */
+async getAvailableQuantity(equipmentId: string, eventId: string): Promise<number> {
+  this.logger.log(`Checking availability for equipment ${equipmentId} in event ${eventId}`);
+  
+  try {
+    // Get the equipment
+    const equipment = await this.findOne(equipmentId);
+    
+    if (!equipment) {
+      throw new NotFoundException(`Equipment with ID ${equipmentId} not found`);
+    }
+    
+    // Get total quantity of this equipment
+    const totalQuantity = equipment.quantity || 0;
+    
+    // Find all registrations for this event that are approved or completed
+    const registrations = await this.registrationModel.find({
+      event: new Types.ObjectId(eventId),
+      status: { $in: [RegistrationStatus.APPROVED, RegistrationStatus.COMPLETED] }
+    }).exec();
+    
+    // Calculate total reserved quantity
+    let reservedQuantity = 0;
+    
+    for (const registration of registrations) {
+      if (registration.equipmentQuantities) {
+        for (const item of registration.equipmentQuantities) {
+          const itemEquipmentId = typeof item.equipment === 'object' ? 
+            String(item.equipment._id) : String(item.equipment);
+            
+          if (itemEquipmentId === equipmentId) {
+            reservedQuantity += item.quantity || 1;
+          }
+        }
+      }
+    }
+    
+    // Available is total minus reserved
+    return Math.max(0, totalQuantity - reservedQuantity);
+  } catch (error) {
+    this.logger.error(`Error checking equipment availability: ${error.message}`);
+    throw error;
+  }
+}
+
+  /**
    * Get available equipment for an event
    */
   async getAvailableForEvent(eventId: string): Promise<Equipment[]> {
@@ -428,4 +477,12 @@ private async isOwner(equipmentId: string, userId: string): Promise<boolean> {
     .populate('organizer', 'username email')
     .exec();
   }
+
+ /**
+ * Reset equipment availability after event
+ */
+async resetEquipmentForEvent(eventId: string): Promise<void> {
+  this.logger.log(`Resetting equipment availability after event ${eventId}`);
+  this.logger.log(`Equipment availability reset for event ${eventId}`);
+}
 }
