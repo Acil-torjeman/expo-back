@@ -15,6 +15,7 @@ import { User, UserSchema } from '../user/entities/user.entity';
 import { ExhibitorModule } from '../exhibitor/exhibitor.module';
 import { OrganizerModule } from '../organizer/organizer.module';
 import { RegistrationModule } from 'src/registration/registration.module';
+import { PugAdapter } from '@nestjs-modules/mailer/dist/adapters/pug.adapter';
 
 @Module({
   imports: [
@@ -45,7 +46,7 @@ import { RegistrationModule } from 'src/registration/registration.module';
       }),
     }),
     
-    // Mailer Configuration
+    //Mailer Configuration
     MailerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

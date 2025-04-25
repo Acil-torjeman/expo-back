@@ -9,4 +9,7 @@ export class SelectEquipmentDto {
   @IsOptional()
   @IsBoolean({ message: 'Equipment selection completed must be a boolean' })
   selectionCompleted?: boolean;
+  
+  @IsOptional()
+  metadata?: any;
 }

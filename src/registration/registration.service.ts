@@ -493,7 +493,6 @@ async selectStands(
   
   return updatedRegistration;
 }
-
 async selectEquipment(
   id: string,
   selectEquipmentDto: SelectEquipmentDto,
@@ -511,7 +510,24 @@ async selectEquipment(
   }
   
   // Verify exhibitor owns this registration
-  // [Keep existing ownership verification code]
+  let regExhibitorId: string;
+  
+  if (registration.exhibitor) {
+    if (typeof registration.exhibitor === 'object' && registration.exhibitor._id) {
+      regExhibitorId = String(registration.exhibitor._id);
+    } else {
+      regExhibitorId = String(registration.exhibitor);
+    }
+  } else {
+    throw new NotFoundException('Registration has no associated exhibitor');
+  }
+  
+  // Convert the provided exhibitor ID to a clean string
+  const providedExhibitorId = String(exhibitorId).trim();
+  
+  if (regExhibitorId !== providedExhibitorId) {
+    throw new ForbiddenException('You do not have permission to update this registration');
+  }
   
   // Get event ID
   const eventId = typeof registration.event === 'object' && registration.event._id
@@ -524,10 +540,10 @@ async selectEquipment(
   // Create equipmentQuantities array with type annotation
   const equipmentQuantities: { equipment: Types.ObjectId; quantity: number }[] = [];
 
-  // Extract quantities from request metadata if available
-  if (registration.metadata && registration.metadata.equipmentQuantities) {
+  // Extract quantities from the DTO metadata if available
+  if (selectEquipmentDto.metadata && selectEquipmentDto.metadata.equipmentQuantities) {
     for (const equipmentId of selectEquipmentDto.equipmentIds) {
-      const quantity = registration.metadata.equipmentQuantities[equipmentId] || 1;
+      const quantity = selectEquipmentDto.metadata.equipmentQuantities[equipmentId] || 1;
       
       // Check if quantity doesn't exceed available quantity
       const availableQuantity = await this.equipmentService.getAvailableQuantity(equipmentId, eventId);
@@ -556,9 +572,12 @@ async selectEquipment(
     equipmentQuantities: equipmentQuantities
   };
   
-  // Update metadata to store quantities
-  if (!registration.metadata) {
-    updateData.metadata = {};
+  // Store quantities in metadata for compatibility
+  if (selectEquipmentDto.metadata && selectEquipmentDto.metadata.equipmentQuantities) {
+    updateData.metadata = {
+      ...(registration.metadata || {}),
+      equipmentQuantities: selectEquipmentDto.metadata.equipmentQuantities
+    };
   }
   
   // Update selection status if provided
