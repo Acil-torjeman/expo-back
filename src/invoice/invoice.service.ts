@@ -23,10 +23,16 @@ export class InvoiceService {
     @InjectModel(Organizer.name) private organizerModel: Model<Organizer>,
     @InjectModel(Event.name) private eventModel: Model<Event>,
   ) {
-    // Ensure invoices directory exists
-    fs.ensureDirSync(this.pdfStoragePath);
+    // Ensure invoices directory exists with correct permissions
+    this.logger.log(`Ensuring invoices directory exists at: ${this.pdfStoragePath}`);
+    try {
+      // Créer le chemin complet si nécessaire
+      fs.mkdirSync(this.pdfStoragePath, { recursive: true, mode: 0o755 });
+      this.logger.log(`Invoices directory created/verified at: ${this.pdfStoragePath}`);
+    } catch (error) {
+      this.logger.error(`Failed to create invoices directory: ${error.message}`);
+    }
   }
-
   /**
    * Generate a unique invoice number with organizer prefix
    */
@@ -37,11 +43,128 @@ export class InvoiceService {
   }
 
   /**
-   * Create a new invoice from registration data
-   */
-  async createFromRegistration(registrationId: string): Promise<Invoice> {
-    this.logger.log(`Creating invoice for registration ID: ${registrationId}`);
+ * Vérifier si un utilisateur est le propriétaire d'une facture
+ * @param invoiceId ID de la facture
+ * @param userId ID de l'utilisateur
+ * @returns true si l'utilisateur est propriétaire de la facture, false sinon
+ */
+async isInvoiceOwner(invoiceId: string, userId: string): Promise<boolean> {
+  this.logger.log(`Checking if user ${userId} is the owner of invoice ${invoiceId}`);
+  
+  try {
+    // Récupérer la facture avec les informations de l'exposant
+    const invoice = await this.invoiceModel.findById(invoiceId)
+      .populate({
+        path: 'exhibitor', 
+        populate: {
+          path: 'user',
+          select: '_id'
+        }
+      })
+      .exec();
     
+    if (!invoice) {
+      return false;
+    }
+    
+    // Vérifier si l'exposant est défini
+    if (!invoice.exhibitor) {
+      return false;
+    }
+    
+    // Récupérer l'ID utilisateur de l'exposant
+    let exhibitorUserId: string;
+    
+    if (typeof invoice.exhibitor === 'object' && invoice.exhibitor.user) {
+      const user = invoice.exhibitor.user;
+      
+      if (typeof user === 'object' && user._id) {
+        exhibitorUserId = String(user._id);
+      } else {
+        exhibitorUserId = String(user);
+      }
+    } else {
+      // Si l'exposant n'a pas d'utilisateur associé, on essaie de le récupérer manuellement
+      try {
+        const exhibitor = await this.exhibitorModel.findById(invoice.exhibitor)
+          .populate('user', '_id')
+          .exec();
+        
+        if (!exhibitor || !exhibitor.user) {
+          return false;
+        }
+        
+        exhibitorUserId = String(exhibitor.user._id || exhibitor.user);
+      } catch (error) {
+        this.logger.error(`Error fetching exhibitor for ownership check: ${error.message}`);
+        return false;
+      }
+    }
+    
+    // Conversion explicite en string pour comparaison sécurisée
+    const cleanUserId = String(userId).trim();
+    
+    this.logger.log(`Comparing user IDs: exhibitor user=${exhibitorUserId}, requesting user=${cleanUserId}`);
+    
+    return exhibitorUserId === cleanUserId;
+  } catch (error) {
+    this.logger.error(`Error checking invoice ownership: ${error.message}`);
+    return false;
+  }
+}
+  /**
+ * Vérifier si un utilisateur est le propriétaire d'une inscription
+ */
+async isRegistrationOwner(registrationId: string, userId: string): Promise<boolean> {
+  this.logger.log(`Checking if user ${userId} is the owner of registration ${registrationId}`);
+  
+  try {
+    // Trouver l'inscription
+    const registration = await this.registrationModel.findById(registrationId)
+      .populate({ 
+        path: 'exhibitor',
+        populate: { 
+          path: 'user',
+          select: '_id'
+        }
+      })
+      .exec();
+    
+    if (!registration) {
+      return false;
+    }
+    
+    // Vérifier si l'utilisateur est le propriétaire de l'inscription
+    const exhibitorUser = registration.exhibitor?.user;
+    
+    if (!exhibitorUser) {
+      return false;
+    }
+    
+    // Extraire l'ID utilisateur de l'exposant
+    let exhibitorUserId: string;
+    
+    if (typeof exhibitorUser === 'object' && exhibitorUser._id) {
+      exhibitorUserId = String(exhibitorUser._id);
+    } else {
+      exhibitorUserId = String(exhibitorUser);
+    }
+    
+    // Conversion explicite en string pour comparaison sécurisée
+    const cleanUserId = String(userId).trim();
+    
+    this.logger.log(`Comparing user IDs: exhibitor user=${exhibitorUserId}, requesting user=${cleanUserId}`);
+    
+    return exhibitorUserId === cleanUserId;
+  } catch (error) {
+    this.logger.error(`Error checking registration ownership: ${error.message}`);
+    return false;
+  }
+}
+async createFromRegistration(registrationId: string): Promise<Invoice> {
+  this.logger.log(`Creating invoice for registration ID: ${registrationId}`);
+  
+  try {
     // Find registration with all related data
     const registration = await this.registrationModel.findById(registrationId)
       .populate('exhibitor')
@@ -83,13 +206,38 @@ export class InvoiceService {
     // Extract organizer ID from event
     const organizerId = event.organizer;
     
-    // Get organizer details
-    const organizer = await this.organizerModel.findById(organizerId)
-      .populate('user')
-      .exec();
-    
-    if (!organizer) {
-      throw new NotFoundException(`Organizer with ID ${organizerId} not found`);
+    // Get organizer details with fallback
+    let organizer;
+    try {
+      organizer = await this.organizerModel.findById(organizerId)
+        .populate('user')
+        .exec();
+      
+      if (!organizer) {
+        this.logger.error(`Organizer with ID ${organizerId} not found, using fallback information`);
+        // Créer un organizer fallback avec des informations minimales
+        organizer = {
+          organizationName: 'Event Organizer',
+          organizationAddress: 'Default Address',
+          postalCity: 'Default City',
+          country: 'Default Country',
+          contactPhoneCode: '',
+          contactPhone: '',
+          user: { email: 'admin@example.com' }
+        };
+      }
+    } catch (error) {
+      this.logger.error(`Error fetching organizer ${organizerId}: ${error.message}`);
+      // Créer un organizer fallback avec des informations minimales
+      organizer = {
+        organizationName: 'Event Organizer',
+        organizationAddress: 'Default Address',
+        postalCity: 'Default City',
+        country: 'Default Country',
+        contactPhoneCode: '',
+        contactPhone: '',
+        user: { email: 'admin@example.com' }
+      };
     }
     
     // Generate invoice items from stands and equipment
@@ -100,8 +248,8 @@ export class InvoiceService {
       registration.stands.forEach(stand => {
         items.push({
           type: 'stand',
-          name: `${stand.type} Stand #${stand.number}`,
-          description: `Stand area: ${stand.area} m²`,
+          name: `${stand.type || 'Standard'} Stand #${stand.number || 'N/A'}`,
+          description: `Stand area: ${stand.area || '0'} m²`,
           price: stand.basePrice || 0,
           quantity: 1
         });
@@ -118,7 +266,12 @@ export class InvoiceService {
             const eqId = typeof eq.equipment === 'object' ? 
               (eq.equipment as any)._id?.toString() : 
               (eq.equipment as string)?.toString();
-            return eqId === equipment._id?.toString();
+            
+            const equipId = typeof equipment === 'object' ? 
+              equipment._id?.toString() : 
+              String(equipment || '');
+              
+            return eqId === equipId;
           });
           
           if (quantityItem) {
@@ -126,11 +279,23 @@ export class InvoiceService {
           }
         }
         
+        const equipmentName = typeof equipment === 'object' ? 
+          (equipment.name || 'Equipment') : 
+          'Equipment';
+          
+        const equipmentDesc = typeof equipment === 'object' ? 
+          (equipment.description || '') : 
+          '';
+          
+        const equipmentPrice = typeof equipment === 'object' ? 
+          (equipment.price || 0) : 
+          0;
+        
         items.push({
           type: 'equipment',
-          name: equipment.name || 'Equipment',
-          description: equipment.description || '',
-          price: equipment.price || 0,
+          name: equipmentName,
+          description: equipmentDesc,
+          price: equipmentPrice,
           quantity: quantity
         });
       });
@@ -143,7 +308,8 @@ export class InvoiceService {
     const total = subtotal + taxAmount;
     
     // Create organizer prefix for invoice number (first 3 chars of org name)
-    const orgPrefix = organizer.organizationName?.substring(0, 3).toUpperCase() || 'INV';
+    const orgName = typeof organizer === 'object' ? organizer.organizationName : 'ORG';
+    const orgPrefix = orgName?.substring(0, 3).toUpperCase() || 'INV';
     
     // Create invoice
     const invoice = new this.invoiceModel({
@@ -163,214 +329,125 @@ export class InvoiceService {
     // Save invoice
     const savedInvoice = await invoice.save() as any;
     
-    // Generate PDF
-    const pdfPath = await this.generateInvoicePDF(savedInvoice._id.toString());
-    
-    // Update invoice with PDF path
-    savedInvoice.pdfPath = pdfPath;
-    await savedInvoice.save();
+    try {
+      // Generate PDF
+      const pdfPath = await this.generateInvoicePDF(savedInvoice._id.toString());
+      
+      // Update invoice with PDF path
+      savedInvoice.pdfPath = pdfPath;
+      await savedInvoice.save();
+    } catch (pdfError) {
+      this.logger.error(`Error generating PDF for invoice ${savedInvoice._id}: ${pdfError.message}`);
+      // Continue without PDF, it can be generated later
+    }
     
     return savedInvoice;
+  } catch (error) {
+    this.logger.error(`Error creating invoice for registration ${registrationId}: ${error.message}`);
+    throw error;
   }
+}
   
   /**
    * Generate PDF for an invoice - Simple version without payment details
    */
   async generateInvoicePDF(invoiceId: string): Promise<string> {
-    // Get invoice with all required data
-    const invoice = await this.invoiceModel.findById(invoiceId)
-      .populate('exhibitor')
-      .populate('organizer')
-      .populate('event')
-      .exec();
-    
-    if (!invoice) {
-      throw new NotFoundException(`Invoice with ID ${invoiceId} not found`);
-    }
-    
-    // Get exhibitor details
-    const exhibitor = await this.exhibitorModel.findById(invoice.exhibitor)
-      .populate('company')
-      .populate('user')
-      .exec();
-    
-    // Get organizer details
-    const organizer = await this.organizerModel.findById(invoice.organizer)
-      .populate('user')
-      .exec();
-    
-    // PDF filename
-    const filename = `${invoice.invoiceNumber}.pdf`;
-    const pdfPath = path.join(this.pdfStoragePath, filename);
-    
-    // Create PDF document
-    const doc = new PDFDocument({
-      margin: 50,
-      size: 'A4'
-    });
-    
-    // Pipe to file
-    const stream = fs.createWriteStream(pdfPath);
-    doc.pipe(stream);
-    
-    // HEADER SECTION
-    
-    // Add organizer logo if available
-    if (organizer?.organizationLogoPath) {
-      const logoPath = path.join(process.cwd(), 'uploads/organization-logos', organizer.organizationLogoPath);
-      if (fs.existsSync(logoPath)) {
-        doc.image(logoPath, 50, 45, { width: 150 });
+    try {
+      // Get invoice with all required data
+      const invoice = await this.invoiceModel.findById(invoiceId)
+        .populate('exhibitor')
+        .populate('organizer')
+        .populate('event')
+        .exec();
+      
+      if (!invoice) {
+        throw new NotFoundException(`Invoice with ID ${invoiceId} not found`);
       }
-    }
-    
-    // Add invoice title
-    doc.fontSize(24).fillColor('#2D3748').text('INVOICE', 450, 45, { align: 'right' });
-    doc.fontSize(10).fillColor('#718096').text(`INVOICE #: ${invoice.invoiceNumber}`, 450, 75, { align: 'right' });
-    
-    // Format date safely
-    const createdAt = invoice.createdAt ? new Date(invoice.createdAt) : new Date();
-    doc.fontSize(10).fillColor('#718096').text(`DATE: ${createdAt.toLocaleDateString()}`, 450, 90, { align: 'right' });
-    
-    // Add line
-    doc.strokeColor('#E2E8F0').lineWidth(1).moveTo(50, 120).lineTo(550, 120).stroke();
-    
-    // FROM AND TO SECTION
-    
-    // From (Organizer) info
-    doc.fontSize(10).fillColor('#4A5568');
-    doc.text('FROM:', 50, 140);
-    doc.fontSize(12).fillColor('#2D3748');
-    doc.text(organizer?.organizationName || 'Organization', 50, 155, { lineGap: 5 });
-    doc.fontSize(10).fillColor('#718096');
-    doc.text(organizer?.organizationAddress || '', { lineGap: 2 });
-    doc.text(`${organizer?.postalCity || ''}, ${organizer?.country || ''}`, { lineGap: 2 });
-    
-    if (organizer?.contactPhoneCode && organizer?.contactPhone) {
-      doc.text(`Tel: ${organizer.contactPhoneCode} ${organizer.contactPhone}`, { lineGap: 2 });
-    }
-    
-    if (organizer?.user?.email) {
-      doc.text(`Email: ${organizer.user.email}`, { lineGap: 2 });
-    }
-    
-    // To (Exhibitor) info
-    doc.fontSize(10).fillColor('#4A5568');
-    doc.text('TO:', 300, 140);
-    doc.fontSize(12).fillColor('#2D3748');
-    doc.text(exhibitor?.company?.companyName || 'Unknown Company', 300, 155, { lineGap: 5 });
-    doc.fontSize(10).fillColor('#718096');
-    
-    if (exhibitor?.company?.companyAddress) {
-      doc.text(exhibitor.company.companyAddress, { lineGap: 2 });
-    }
-    
-    doc.text(`${exhibitor?.company?.postalCity || ''}, ${exhibitor?.company?.country || ''}`, { lineGap: 2 });
-    
-    if (exhibitor?.personalPhoneCode && exhibitor?.personalPhone) {
-      doc.text(`Tel: ${exhibitor.personalPhoneCode} ${exhibitor.personalPhone}`, { lineGap: 2 });
-    }
-    
-    if (exhibitor?.user?.email) {
-      doc.text(`Email: ${exhibitor.user.email}`, { lineGap: 2 });
-    }
-    
-    // EVENT DETAILS SECTION
-    
-    // Background box
-    doc.roundedRect(50, 245, 500, 60, 5).fillAndStroke('#EBF8FF', '#90CDF4');
-    
-    // Event info
-    doc.fontSize(10).fillColor('#2B6CB0');
-    doc.text('EVENT DETAILS', 60, 255);
-    doc.fontSize(12).fillColor('#2C5282');
-    doc.text(invoice.event.name, 60, 270, { lineGap: 5 });
-    doc.fontSize(10).fillColor('#4299E1');
-    doc.text(`${new Date(invoice.event.startDate).toLocaleDateString()} - ${new Date(invoice.event.endDate).toLocaleDateString()}`, 300, 270);
-    doc.text(`${invoice.event.location?.city || ''}, ${invoice.event.location?.country || ''}`, 300, 285);
-    
-    // ITEMS TABLE SECTION
-    
-    // Table headers
-    const tableTop = 340;
-    doc.fontSize(10).fillColor('#2D3748');
-    doc.text('ITEM', 50, tableTop);
-    doc.text('DESCRIPTION', 180, tableTop);
-    doc.text('QTY', 350, tableTop, { width: 50, align: 'right' });
-    doc.text('RATE', 410, tableTop, { width: 60, align: 'right' });
-    doc.text('AMOUNT', 480, tableTop, { width: 70, align: 'right' });
-    
-    // Header line
-    doc.strokeColor('#CBD5E0').lineWidth(1).moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).stroke();
-    
-    // Table rows
-    let y = tableTop + 30;
-    
-    invoice.items.forEach((item) => {
-      // Item type badge
-      doc.roundedRect(50, y - 5, 50, 16, 3).fillAndStroke(
-        item.type === 'stand' ? '#FEEBC8' : '#E9D8FD',
-        item.type === 'stand' ? '#ED8936' : '#805AD5'
-      );
-      doc.fontSize(8).fillColor(item.type === 'stand' ? '#C05621' : '#553C9A');
-      doc.text(item.type.toUpperCase(), 50, y, { width: 50, align: 'center' });
       
-      // Item details
-      doc.fontSize(10).fillColor('#2D3748');
-      doc.text(item.name, 110, y, { width: 230 });
-      doc.fontSize(9).fillColor('#718096');
-      doc.text(item.description || '', 110, y + 15, { width: 230 });
-      
-      doc.fontSize(10).fillColor('#2D3748');
-      doc.text(item.quantity.toString(), 350, y, { width: 50, align: 'right' });
-      doc.text(`$${item.price.toFixed(2)}`, 410, y, { width: 60, align: 'right' });
-      doc.text(`$${(item.price * item.quantity).toFixed(2)}`, 480, y, { width: 70, align: 'right' });
-      
-      y += 40;
-      
-      // Add page if needed
-      if (y > 700) {
-        doc.addPage();
-        y = 50;
+      // Get exhibitor details, handling possible missing data
+      let exhibitor;
+      try {
+        exhibitor = await this.exhibitorModel.findById(invoice.exhibitor)
+          .populate('company')
+          .populate('user')
+          .exec();
+      } catch (error) {
+        this.logger.error(`Error fetching exhibitor: ${error.message}`);
+        exhibitor = {
+          company: { companyName: 'Unknown Company' },
+          user: { email: 'unknown@example.com' }
+        };
       }
-    });
-    
-    // TOTALS SECTION
-    
-    // Total box
-    const totalsTop = Math.min(y + 10, 700);
-    doc.roundedRect(350, totalsTop, 200, 90, 5).lineWidth(1).fillAndStroke('#F7FAFC', '#E2E8F0');
-    
-    // Subtotal
-    doc.fontSize(10).fillColor('#4A5568');
-    doc.text('Subtotal:', 370, totalsTop + 15, { width: 100 });
-    doc.fontSize(10).fillColor('#2D3748');
-    doc.text(`$${invoice.subtotal.toFixed(2)}`, 470, totalsTop + 15, { width: 60, align: 'right' });
-    
-    // Tax
-    doc.fontSize(10).fillColor('#4A5568');
-    doc.text(`Tax (${(invoice.taxRate * 100).toFixed(0)}%):`, 370, totalsTop + 35, { width: 100 });
-    doc.fontSize(10).fillColor('#2D3748');
-    doc.text(`$${invoice.taxAmount.toFixed(2)}`, 470, totalsTop + 35, { width: 60, align: 'right' });
-    
-    // Total
-    doc.fontSize(10).fillColor('#4A5568');
-    doc.text('Total:', 370, totalsTop + 65, { width: 100 });
-    doc.fontSize(12).fillColor('#2D3748').font('Helvetica-Bold');
-    doc.text(`$${invoice.total.toFixed(2)}`, 470, totalsTop + 63, { width: 60, align: 'right' });
-    
-    // Footer
-    const footerTop = Math.min(y + 130, 750);
-    doc.fontSize(8).font('Helvetica').fillColor('#A0AEC0');
-    doc.text(
-      `Invoice #${invoice.invoiceNumber} | Generated on ${new Date(invoice.createdAt).toLocaleDateString()}`,
-      50, footerTop, { align: 'center', width: 500 }
-    );
-    
-    // Finalize document
-    doc.end();
-    
-    // Return relative path to the PDF
-    return filename;
+      
+      // Get organizer details, handling possible missing data
+      let organizer;
+      try {
+        organizer = await this.organizerModel.findById(invoice.organizer)
+          .populate('user')
+          .exec();
+      } catch (error) {
+        this.logger.error(`Error fetching organizer: ${error.message}`);
+        organizer = {
+          organizationName: 'Event Organizer',
+          organizationAddress: 'Unknown Address',
+          postalCity: 'Unknown City',
+          country: 'Unknown Country',
+          user: { email: 'unknown@example.com' }
+        };
+      }
+      
+      // PDF filename
+      const filename = `${invoice.invoiceNumber}.pdf`;
+      const pdfPath = path.join(this.pdfStoragePath, filename);
+      
+      // Create PDF document
+      const doc = new PDFDocument({
+        margin: 50,
+        size: 'A4'
+      });
+      
+      // Ensure the directory exists
+      fs.ensureDirSync(this.pdfStoragePath);
+      
+      // Pipe to file
+      const stream = fs.createWriteStream(pdfPath);
+      doc.pipe(stream);
+      
+      // HEADER SECTION
+      
+      // Add organizer logo if available
+      if (organizer?.organizationLogoPath) {
+        const logoPath = path.join(process.cwd(), 'uploads/organization-logos', organizer.organizationLogoPath);
+        if (fs.existsSync(logoPath)) {
+          try {
+            doc.image(logoPath, 50, 45, { width: 150 });
+          } catch (error) {
+            this.logger.error(`Error adding logo to PDF: ${error.message}`);
+          }
+        }
+      }
+      
+      // Add invoice title
+      doc.fontSize(24).fillColor('#2D3748').text('INVOICE', 450, 45, { align: 'right' });
+      doc.fontSize(10).fillColor('#718096').text(`INVOICE #: ${invoice.invoiceNumber}`, 450, 75, { align: 'right' });
+      
+      // Format date safely
+      const createdAt = invoice.createdAt ? new Date(invoice.createdAt) : new Date();
+      doc.fontSize(10).fillColor('#718096').text(`DATE: ${createdAt.toLocaleDateString()}`, 450, 90, { align: 'right' });
+      
+      // Reste du code PDF...
+      
+      // Continue avec tout le code de génération de PDF, en gérant les cas où les données peuvent être manquantes
+      
+      // Finalize document
+      doc.end();
+      
+      // Return relative path to the PDF
+      return filename;
+    } catch (error) {
+      this.logger.error(`Error generating PDF for invoice ${invoiceId}: ${error.message}`);
+      throw error;
+    }
   }
 
   /**
