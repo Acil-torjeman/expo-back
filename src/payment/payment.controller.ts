@@ -1,34 +1,105 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+// src/payment/payment.controller.ts
+import { 
+  Controller, 
+  Get, 
+  Post, 
+  Body, 
+  Param, 
+  UseGuards, 
+  Req, 
+  Logger, 
+  HttpCode, 
+  HttpStatus,
+  NotFoundException,
+  BadRequestException,
+  InternalServerErrorException,
+  Query
+} from '@nestjs/common';
 import { PaymentService } from './payment.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
+import { PaymentWebhookDto } from './dto/payment-webhook.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { IsPublic } from '../auth/decorators/public.decorator';
+import { UserRole } from '../user/entities/user.entity';
 
-@Controller('payment')
+@Controller('payments')
 export class PaymentController {
+  private readonly logger = new Logger(PaymentController.name);
+
   constructor(private readonly paymentService: PaymentService) {}
 
   @Post()
-  create(@Body() createPaymentDto: CreatePaymentDto) {
-    return this.paymentService.create(createPaymentDto);
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.CREATED)
+  async create(@Body() createPaymentDto: CreatePaymentDto, @Req() req) {
+    this.logger.log(`Creating payment for invoice ${createPaymentDto.invoiceId}`);
+    try {
+      return await this.paymentService.create(createPaymentDto, req.user.id);
+    } catch (error) {
+      this.logger.error(`Error creating payment: ${error.message}`, error.stack);
+      
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      throw new InternalServerErrorException('Failed to create payment');
+    }
   }
 
   @Get()
-  findAll() {
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async findAll() {
+    this.logger.log('Getting all payments');
     return this.paymentService.findAll();
   }
 
+  @Get('my-payments')
+  @UseGuards(JwtAuthGuard)
+  async findMyPayments(@Req() req) {
+    this.logger.log(`Getting payments for user ${req.user.id}`);
+    return this.paymentService.findByUser(req.user.id);
+  }
+
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.paymentService.findOne(+id);
+  @UseGuards(JwtAuthGuard)
+  async findOne(@Param('id') id: string) {
+    this.logger.log(`Getting payment with ID: ${id}`);
+    return this.paymentService.findOne(id);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updatePaymentDto: UpdatePaymentDto) {
-    return this.paymentService.update(+id, updatePaymentDto);
+  @Post('webhook')
+  @IsPublic()
+  @HttpCode(HttpStatus.OK)
+  async handleWebhook(@Body() webhookData: PaymentWebhookDto) {
+    this.logger.log(`Received payment webhook: ${webhookData.event_type}`);
+    try {
+      await this.paymentService.handleWebhook(webhookData);
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Error processing webhook: ${error.message}`, error.stack);
+      // Always return success to prevent PayPal from retrying
+      return { success: true };
+    }
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.paymentService.remove(+id);
+  @Get('capture')
+  @UseGuards(JwtAuthGuard)
+  async capturePayment(@Query('orderId') orderId: string) {
+    this.logger.log(`Capturing payment for order ID: ${orderId}`);
+    try {
+      const payment = await this.paymentService.capturePayment(orderId);
+      return {
+        success: true,
+        paymentId: payment._id,
+        status: payment.status
+      };
+    } catch (error) {
+      this.logger.error(`Error capturing payment: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to capture payment');
+    }
   }
 }
