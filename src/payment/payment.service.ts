@@ -1,13 +1,40 @@
+// src/payment/payment.service.ts
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import * as querystring from 'querystring';
-import { Payment, PaymentStatus } from './entities/payment.entity';
+import { Payment, PaymentStatus, PaymentProvider } from './entities/payment.entity';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { PaymentWebhookDto } from './dto/payment-webhook.dto';
 import { Invoice, InvoiceStatus } from '../invoice/entities/invoice.entity';
 import { User } from '../user/entities/user.entity';
+
+// Define interfaces for PayPal responses
+interface PayPalTokenResponse {
+  access_token: string;
+  token_type: string;
+  app_id: string;
+  expires_in: number;
+  nonce: string;
+}
+
+interface PayPalOrderLink {
+  href: string;
+  rel: string;
+  method: string;
+}
+
+interface PayPalOrderResponse {
+  id: string;
+  status: string;
+  links: PayPalOrderLink[];
+}
+
+interface PayPalCaptureResponse {
+  id: string;
+  status: string;
+}
 
 @Injectable()
 export class PaymentService {
@@ -38,16 +65,17 @@ export class PaymentService {
         throw new BadRequestException('This invoice has already been paid');
       }
       
-      // Create simple payment in database
+      // Create payment in database
       const payment = new this.paymentModel({
         invoice: new Types.ObjectId(createPaymentDto.invoiceId),
         user: new Types.ObjectId(userId),
         amount: invoice.total,
         status: PaymentStatus.PENDING,
-        provider: 'paypal'
+        provider: PaymentProvider.PAYPAL
       });
       
       const savedPayment = await payment.save();
+      const paymentId = (savedPayment._id as unknown as Types.ObjectId).toString();
       
       // Get PayPal credentials
       const clientId = this.configService.get<string>('paypal.clientId');
@@ -66,7 +94,7 @@ export class PaymentService {
       
       this.logger.log(`Requesting PayPal token from: ${tokenUrl}`);
       
-      const tokenResponse = await axios.post(
+      const tokenResponse = await axios.post<PayPalTokenResponse>(
         tokenUrl,
         'grant_type=client_credentials',
         {
@@ -86,24 +114,26 @@ export class PaymentService {
         : 'https://api.sandbox.paypal.com/v2/checkout/orders';
       
       // Set URLs
-      const returnUrl = createPaymentDto.returnUrl || 'http://localhost:5174/exhibitor/payments/success';
-      const cancelUrl = createPaymentDto.cancelUrl || 'http://localhost:5174/exhibitor/payments/cancel';
+      const returnUrl = createPaymentDto.returnUrl || this.configService.get<string>('paypal.returnUrl');
+      const cancelUrl = createPaymentDto.cancelUrl || this.configService.get<string>('paypal.cancelUrl');
       
       // Create order with minimal data
       const orderData = {
         intent: 'CAPTURE',
         purchase_units: [
           {
-            reference_id: savedPayment._id.toString(),
+            reference_id: paymentId,
             amount: {
               currency_code: 'USD',
               value: invoice.total.toFixed(2)
-            }
+            },
+            description: `Invoice #${invoice.invoiceNumber}` // Ajoutez cette ligne
           }
         ],
         application_context: {
           brand_name: 'ExpoManagement',
-          landing_page: 'BILLING',
+          landing_page: 'NO_PREFERENCE',
+          shipping_preference: 'NO_SHIPPING', // Ajoutez cette ligne
           user_action: 'PAY_NOW',
           return_url: returnUrl,
           cancel_url: cancelUrl
@@ -112,7 +142,7 @@ export class PaymentService {
       
       this.logger.log(`Creating PayPal order at: ${orderUrl}`);
       
-      const orderResponse = await axios.post(orderUrl, orderData, {
+      const orderResponse = await axios.post<PayPalOrderResponse>(orderUrl, orderData, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${accessToken}`
@@ -130,14 +160,15 @@ export class PaymentService {
       }
       
       // Update payment with PayPal info
+      savedPayment.providerId = orderResponse.data.id;
       savedPayment.providerOrderId = orderResponse.data.id;
       savedPayment.providerResponse = JSON.stringify(orderResponse.data);
       await savedPayment.save();
       
       // Return response with PayPal URL
       return {
-        id: savedPayment._id.toString(),
-        invoiceId: invoice._id.toString(),
+        id: paymentId,
+        invoiceId: (invoice._id as unknown as Types.ObjectId).toString(),
         status: PaymentStatus.PENDING,
         amount: invoice.total,
         paymentUrl: approvalLink.href,
@@ -182,7 +213,7 @@ export class PaymentService {
         ? 'https://api.paypal.com/v1/oauth2/token'
         : 'https://api.sandbox.paypal.com/v1/oauth2/token';
       
-      const tokenResponse = await axios.post(
+      const tokenResponse = await axios.post<PayPalTokenResponse>(
         tokenUrl,
         'grant_type=client_credentials',
         {
@@ -200,7 +231,7 @@ export class PaymentService {
         ? `https://api.paypal.com/v2/checkout/orders/${orderId}/capture`
         : `https://api.sandbox.paypal.com/v2/checkout/orders/${orderId}/capture`;
       
-      const captureResponse = await axios.post(captureUrl, {}, {
+      const captureResponse = await axios.post<PayPalCaptureResponse>(captureUrl, {}, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${accessToken}`
@@ -214,18 +245,17 @@ export class PaymentService {
       await payment.save();
       
       // Update invoice status
-      if (payment.invoice) {
-        const invoice = await this.invoiceModel.findById(payment.invoice).exec();
-        if (invoice) {
-          invoice.status = InvoiceStatus.PAID;
-          await invoice.save();
-        }
+      const invoiceId = payment.invoice.toString();
+      const invoice = await this.invoiceModel.findById(invoiceId).exec();
+      if (invoice) {
+        invoice.status = InvoiceStatus.PAID;
+        await invoice.save();
       }
       
       return { 
         success: true, 
-        invoiceId: payment.invoice.toString(),
-        paymentId: payment._id.toString() 
+        invoiceId: invoiceId,
+        paymentId: (payment._id as unknown as Types.ObjectId).toString() 
       };
     } catch (error) {
       this.logger.error(`Error capturing payment: ${error.message}`);
@@ -234,6 +264,55 @@ export class PaymentService {
         this.logger.error(`API Error: ${JSON.stringify(error.response.data || {})}`);
       }
       
+      throw error;
+    }
+  }
+
+  /**
+   * Handle webhook from PayPal
+   */
+  async handleWebhook(webhookData: PaymentWebhookDto): Promise<void> {
+    this.logger.log(`Processing webhook: ${webhookData.event_type}`);
+    
+    try {
+      // Handle payment completion
+      if (webhookData.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
+        const resource = webhookData.resource;
+        
+        if (resource && typeof resource === 'object') {
+          // Try to find the related order ID from supplementary data
+          const supplementaryData = resource.supplementary_data;
+          let orderId: string | undefined;
+          
+          if (supplementaryData && typeof supplementaryData === 'object' && 
+              supplementaryData.related_ids && typeof supplementaryData.related_ids === 'object') {
+            orderId = supplementaryData.related_ids.order_id;
+          }
+          
+          // If we have an order ID, update the payment
+          if (orderId) {
+            const payment = await this.paymentModel.findOne({ providerOrderId: orderId }).exec();
+            
+            if (payment) {
+              payment.status = PaymentStatus.COMPLETED;
+              payment.completedAt = new Date();
+              await payment.save();
+              
+              // Update invoice status
+              const invoiceId = payment.invoice.toString();
+              const invoice = await this.invoiceModel.findById(invoiceId).exec();
+              if (invoice) {
+                invoice.status = InvoiceStatus.PAID;
+                await invoice.save();
+              }
+            }
+          } else {
+            this.logger.warn('PayPal webhook missing order ID reference');
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Error processing webhook: ${error.message}`);
       throw error;
     }
   }
