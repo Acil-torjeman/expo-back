@@ -1,51 +1,39 @@
 // src/payment/payment.service.ts
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
-import { Payment, PaymentStatus, PaymentProvider } from './entities/payment.entity';
+import Stripe from 'stripe';
+import { Payment, PaymentStatus } from './entities/payment.entity';
 import { CreatePaymentDto } from './dto/create-payment.dto';
-import { PaymentWebhookDto } from './dto/payment-webhook.dto';
 import { Invoice, InvoiceStatus } from '../invoice/entities/invoice.entity';
 import { User } from '../user/entities/user.entity';
-
-// Define interfaces for PayPal responses
-interface PayPalTokenResponse {
-  access_token: string;
-  token_type: string;
-  app_id: string;
-  expires_in: number;
-  nonce: string;
-}
-
-interface PayPalOrderLink {
-  href: string;
-  rel: string;
-  method: string;
-}
-
-interface PayPalOrderResponse {
-  id: string;
-  status: string;
-  links: PayPalOrderLink[];
-}
-
-interface PayPalCaptureResponse {
-  id: string;
-  status: string;
-}
 
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
+  private stripe: Stripe;
 
   constructor(
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     @InjectModel(Invoice.name) private invoiceModel: Model<Invoice>,
     @InjectModel(User.name) private userModel: Model<User>,
     private configService: ConfigService,
-  ) {}
+  ) {
+    try {
+      const stripeSecretKey = this.configService.get<string>('stripe.secretKey');
+      if (!stripeSecretKey) {
+        this.logger.error('Stripe secret key is not defined');
+        throw new Error('Stripe secret key is required');
+      }
+      this.stripe = new Stripe(stripeSecretKey, {
+        apiVersion: '2025-03-31.basil',
+      });
+      this.logger.log('Stripe initialized successfully');
+    } catch (error) {
+      this.logger.error(`Error initializing Stripe: ${error.message}`);
+    }
+  }
 
   /**
    * Create a new payment for an invoice
@@ -54,11 +42,18 @@ export class PaymentService {
     this.logger.log(`Creating payment for invoice ${createPaymentDto.invoiceId} by user ${userId}`);
     
     try {
+      // Verify Stripe is initialized
+      if (!this.stripe) {
+        throw new InternalServerErrorException('Payment service not properly initialized');
+      }
+      
       // Find the invoice
       const invoice = await this.invoiceModel.findById(createPaymentDto.invoiceId).exec();
       if (!invoice) {
         throw new NotFoundException(`Invoice with ID ${createPaymentDto.invoiceId} not found`);
       }
+      
+      this.logger.log(`Found invoice: ${invoice.invoiceNumber} with total: ${invoice.total}`);
       
       // Check if invoice is already paid
       if (invoice.status === InvoiceStatus.PAID) {
@@ -71,248 +66,199 @@ export class PaymentService {
         user: new Types.ObjectId(userId),
         amount: invoice.total,
         status: PaymentStatus.PENDING,
-        provider: PaymentProvider.PAYPAL
+        provider: 'stripe'
       });
       
       const savedPayment = await payment.save();
-      const paymentId = (savedPayment._id as unknown as Types.ObjectId).toString();
       
-      // Get PayPal credentials
-      const clientId = this.configService.get<string>('paypal.clientId');
-      const clientSecret = this.configService.get<string>('paypal.clientSecret');
-      const mode = this.configService.get<string>('paypal.mode') || 'sandbox';
-      
-      this.logger.log(`Using PayPal in ${mode} mode`);
-      
-      // Create basic auth for PayPal
-      const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-      
-      // Get access token
-      const tokenUrl = mode === 'live' 
-        ? 'https://api.paypal.com/v1/oauth2/token'
-        : 'https://api.sandbox.paypal.com/v1/oauth2/token';
-      
-      this.logger.log(`Requesting PayPal token from: ${tokenUrl}`);
-      
-      const tokenResponse = await axios.post<PayPalTokenResponse>(
-        tokenUrl,
-        'grant_type=client_credentials',
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Authorization': `Basic ${auth}`
-          }
-        }
-      );
-      
-      const accessToken = tokenResponse.data.access_token;
-      this.logger.log('PayPal token obtained successfully');
-      
-      // Create payment order
-      const orderUrl = mode === 'live'
-        ? 'https://api.paypal.com/v2/checkout/orders'
-        : 'https://api.sandbox.paypal.com/v2/checkout/orders';
-      
-      // Set URLs
-      const returnUrl = createPaymentDto.returnUrl || this.configService.get<string>('paypal.returnUrl');
-      const cancelUrl = createPaymentDto.cancelUrl || this.configService.get<string>('paypal.cancelUrl');
-      
-      // Create order with minimal data
-      const orderData = {
-        intent: 'CAPTURE',
-        purchase_units: [
-          {
-            reference_id: paymentId,
-            amount: {
-              currency_code: 'USD',
-              value: invoice.total.toFixed(2)
-            },
-            description: `Invoice #${invoice.invoiceNumber}` // Ajoutez cette ligne
-          }
-        ],
-        application_context: {
-          brand_name: 'ExpoManagement',
-          landing_page: 'NO_PREFERENCE',
-          shipping_preference: 'NO_SHIPPING', // Ajoutez cette ligne
-          user_action: 'PAY_NOW',
-          return_url: returnUrl,
-          cancel_url: cancelUrl
-        }
-      };
-      
-      this.logger.log(`Creating PayPal order at: ${orderUrl}`);
-      
-      const orderResponse = await axios.post<PayPalOrderResponse>(orderUrl, orderData, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        }
-      });
-      
-      this.logger.log(`PayPal order created: ${JSON.stringify(orderResponse.data)}`);
-      
-      // Extract approval URL
-      const links = orderResponse.data.links;
-      const approvalLink = links.find(link => link.rel === 'approve');
-      
-      if (!approvalLink) {
-        throw new Error('No approval link found in PayPal response');
+      if (!savedPayment || !savedPayment._id) {
+        throw new InternalServerErrorException('Failed to create payment record');
       }
       
-      // Update payment with PayPal info
-      savedPayment.providerId = orderResponse.data.id;
-      savedPayment.providerOrderId = orderResponse.data.id;
-      savedPayment.providerResponse = JSON.stringify(orderResponse.data);
-      await savedPayment.save();
+      const paymentId = savedPayment._id.toString();
+      // Fix the type issue by explicitly converting invoice._id to string
+      const invoiceId = invoice._id ? invoice._id.toString() : createPaymentDto.invoiceId;
       
-      // Return response with PayPal URL
-      return {
-        id: paymentId,
-        invoiceId: (invoice._id as unknown as Types.ObjectId).toString(),
-        status: PaymentStatus.PENDING,
-        amount: invoice.total,
-        paymentUrl: approvalLink.href,
-        providerId: orderResponse.data.id
-      };
+      this.logger.log(`Created payment record with ID: ${paymentId}`);
       
+      // Get success and cancel URLs
+      const successUrl = createPaymentDto.returnUrl || 
+        this.configService.get<string>('stripe.successUrl') || 
+        'http://localhost:5174/exhibitor/payments/success';
+      
+      const cancelUrl = createPaymentDto.cancelUrl || 
+        this.configService.get<string>('stripe.cancelUrl') || 
+        'http://localhost:5174/exhibitor/payments/cancel';
+      
+      this.logger.log(`Creating Stripe session with return URLs: ${successUrl}, ${cancelUrl}`);
+      
+      // Create a Stripe checkout session with proper error handling
+      try {
+        const lineItems = [
+          {
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: `Invoice #${invoice.invoiceNumber}`,
+                description: `Payment for event: ${invoice.event?.name || 'Exhibition event'}`,
+              },
+              unit_amount: Math.round(invoice.total * 100), // Stripe needs amount in cents
+            },
+            quantity: 1,
+          },
+        ];
+        
+        this.logger.log(`Creating checkout session with line items: ${JSON.stringify(lineItems)}`);
+        
+        const session = await this.stripe.checkout.sessions.create({
+          payment_method_types: ['card'],
+          line_items: lineItems,
+          mode: 'payment',
+          success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: cancelUrl,
+          client_reference_id: paymentId,
+          metadata: {
+            invoiceId: invoiceId,
+            paymentId: paymentId,
+          },
+        });
+        
+        this.logger.log(`Stripe session created with ID: ${session.id}`);
+        
+        // Update payment with Stripe info
+        savedPayment.providerId = session.id;
+        savedPayment.providerResponse = JSON.stringify(session);
+        await savedPayment.save();
+        
+        // Return response with Stripe URL
+        return {
+          id: paymentId,
+          invoiceId: invoiceId,
+          status: PaymentStatus.PENDING,
+          amount: invoice.total,
+          paymentUrl: session.url,
+          providerId: session.id
+        };
+      } catch (stripeError) {
+        // Handle Stripe API errors
+        this.logger.error(`Stripe error: ${stripeError.message}`);
+        
+        // Clean up the payment record since the Stripe session failed
+        await this.paymentModel.findByIdAndDelete(savedPayment._id);
+        
+        throw new InternalServerErrorException(`Payment processing error: ${stripeError.message}`);
+      }
     } catch (error) {
       this.logger.error(`Error creating payment: ${error.message}`);
-      
-      if (error.response) {
-        this.logger.error(`API Error: ${JSON.stringify(error.response.data || {})}`);
-      }
-      
       throw error;
     }
   }
 
+
   /**
-   * Capture a PayPal payment
+   * Check payment status
    */
-  async capturePayment(orderId: string): Promise<any> {
+  async checkPaymentStatus(sessionId: string): Promise<any> {
     try {
-      this.logger.log(`Capturing PayPal payment for order ${orderId}`);
+      this.logger.log(`Checking Stripe payment status for session ${sessionId}`);
       
       // Find the payment
-      const payment = await this.paymentModel.findOne({ providerOrderId: orderId }).exec();
+      const payment = await this.paymentModel.findOne({ providerId: sessionId }).exec();
       
       if (!payment) {
-        throw new NotFoundException(`Payment with order ID ${orderId} not found`);
+        throw new NotFoundException(`Payment with session ID ${sessionId} not found`);
       }
       
-      // Get PayPal credentials
-      const clientId = this.configService.get<string>('paypal.clientId');
-      const clientSecret = this.configService.get<string>('paypal.clientSecret');
-      const mode = this.configService.get<string>('paypal.mode') || 'sandbox';
+      // Get session from Stripe
+      const session = await this.stripe.checkout.sessions.retrieve(sessionId);
       
-      // Create basic auth for PayPal
-      const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-      
-      // Get access token
-      const tokenUrl = mode === 'live' 
-        ? 'https://api.paypal.com/v1/oauth2/token'
-        : 'https://api.sandbox.paypal.com/v1/oauth2/token';
-      
-      const tokenResponse = await axios.post<PayPalTokenResponse>(
-        tokenUrl,
-        'grant_type=client_credentials',
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Authorization': `Basic ${auth}`
+      // Check if payment is successful
+      if (session.payment_status === 'paid') {
+        // Update payment status
+        payment.status = PaymentStatus.COMPLETED;
+        payment.completedAt = new Date();
+        payment.providerResponse = JSON.stringify(session);
+        await payment.save();
+        
+        // Update invoice status
+        if (payment.invoice) {
+          const invoice = await this.invoiceModel.findById(payment.invoice).exec();
+          if (invoice) {
+            invoice.status = InvoiceStatus.PAID;
+            await invoice.save();
           }
         }
-      );
-      
-      const accessToken = tokenResponse.data.access_token;
-      
-      // Capture payment
-      const captureUrl = mode === 'live'
-        ? `https://api.paypal.com/v2/checkout/orders/${orderId}/capture`
-        : `https://api.sandbox.paypal.com/v2/checkout/orders/${orderId}/capture`;
-      
-      const captureResponse = await axios.post<PayPalCaptureResponse>(captureUrl, {}, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        }
-      });
-      
-      // Update payment status
-      payment.status = PaymentStatus.COMPLETED;
-      payment.completedAt = new Date();
-      payment.providerResponse = JSON.stringify(captureResponse.data);
-      await payment.save();
-      
-      // Update invoice status
-      const invoiceId = payment.invoice.toString();
-      const invoice = await this.invoiceModel.findById(invoiceId).exec();
-      if (invoice) {
-        invoice.status = InvoiceStatus.PAID;
-        await invoice.save();
+        
+        const paymentId = payment._id ? payment._id.toString() : '';
+        const invoiceId = payment.invoice ? payment.invoice.toString() : '';
+        
+        return { 
+          success: true, 
+          invoiceId: invoiceId,
+          paymentId: paymentId 
+        };
       }
       
       return { 
-        success: true, 
-        invoiceId: invoiceId,
-        paymentId: (payment._id as unknown as Types.ObjectId).toString() 
+        success: false,
+        message: 'Payment not completed yet',
       };
     } catch (error) {
-      this.logger.error(`Error capturing payment: ${error.message}`);
-      
-      if (error.response) {
-        this.logger.error(`API Error: ${JSON.stringify(error.response.data || {})}`);
-      }
-      
+      this.logger.error(`Error checking payment status: ${error.message}`);
       throw error;
     }
   }
 
   /**
-   * Handle webhook from PayPal
+   * Handle Stripe webhook
    */
-  async handleWebhook(webhookData: PaymentWebhookDto): Promise<void> {
-    this.logger.log(`Processing webhook: ${webhookData.event_type}`);
-    
+  async handleWebhook(payload: any, signature: string): Promise<any> {
     try {
-      // Handle payment completion
-      if (webhookData.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
-        const resource = webhookData.resource;
+      const webhookSecret = this.configService.get<string>('stripe.webhookSecret');
+      let event;
+      
+      // Verify webhook signature
+      if (webhookSecret) {
+        event = this.stripe.webhooks.constructEvent(
+          payload,
+          signature,
+          webhookSecret
+        );
+      } else {
+        // For testing, parse the payload directly
+        event = JSON.parse(payload);
+      }
+      
+      this.logger.log(`Received Stripe webhook: ${event.type}`);
+      
+      // Handle checkout.session.completed event
+      if (event.type === 'checkout.session.completed') {
+        const session = event.data.object;
         
-        if (resource && typeof resource === 'object') {
-          // Try to find the related order ID from supplementary data
-          const supplementaryData = resource.supplementary_data;
-          let orderId: string | undefined;
+        // Find the payment
+        const payment = await this.paymentModel.findOne({ providerId: session.id }).exec();
+        
+        if (payment) {
+          // Update payment status
+          payment.status = PaymentStatus.COMPLETED;
+          payment.completedAt = new Date();
+          payment.providerResponse = JSON.stringify(session);
+          await payment.save();
           
-          if (supplementaryData && typeof supplementaryData === 'object' && 
-              supplementaryData.related_ids && typeof supplementaryData.related_ids === 'object') {
-            orderId = supplementaryData.related_ids.order_id;
-          }
-          
-          // If we have an order ID, update the payment
-          if (orderId) {
-            const payment = await this.paymentModel.findOne({ providerOrderId: orderId }).exec();
-            
-            if (payment) {
-              payment.status = PaymentStatus.COMPLETED;
-              payment.completedAt = new Date();
-              await payment.save();
-              
-              // Update invoice status
-              const invoiceId = payment.invoice.toString();
-              const invoice = await this.invoiceModel.findById(invoiceId).exec();
-              if (invoice) {
-                invoice.status = InvoiceStatus.PAID;
-                await invoice.save();
-              }
+          // Update invoice status
+          if (payment.invoice) {
+            const invoice = await this.invoiceModel.findById(payment.invoice).exec();
+            if (invoice) {
+              invoice.status = InvoiceStatus.PAID;
+              await invoice.save();
             }
-          } else {
-            this.logger.warn('PayPal webhook missing order ID reference');
           }
         }
       }
+      
+      return { received: true };
     } catch (error) {
-      this.logger.error(`Error processing webhook: ${error.message}`);
+      this.logger.error(`Error handling webhook: ${error.message}`);
       throw error;
     }
   }

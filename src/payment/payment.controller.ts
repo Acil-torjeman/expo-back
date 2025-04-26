@@ -1,4 +1,3 @@
-// src/payment/payment.controller.ts
 import { 
   Controller, 
   Get, 
@@ -7,18 +6,18 @@ import {
   Param, 
   UseGuards, 
   Req, 
-  Logger, 
-  HttpCode, 
+  Headers,
+  Logger,
   HttpStatus,
+  HttpCode,
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
-  Query
+  Query,
+  RawBodyRequest,
 } from '@nestjs/common';
 import { PaymentService } from './payment.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
-import { UpdatePaymentDto } from './dto/update-payment.dto';
-import { PaymentWebhookDto } from './dto/payment-webhook.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -74,32 +73,33 @@ export class PaymentController {
   @Post('webhook')
   @IsPublic()
   @HttpCode(HttpStatus.OK)
-  async handleWebhook(@Body() webhookData: PaymentWebhookDto) {
-    this.logger.log(`Received payment webhook: ${webhookData.event_type}`);
+  async handleWebhook(@Req() req: RawBodyRequest<any>, @Headers('stripe-signature') signature: string) {
+    this.logger.log('Received Stripe webhook');
     try {
-      await this.paymentService.handleWebhook(webhookData);
-      return { success: true };
+      const payload = req.rawBody || JSON.stringify(req.body);
+      await this.paymentService.handleWebhook(payload, signature);
+      return { received: true };
     } catch (error) {
       this.logger.error(`Error processing webhook: ${error.message}`, error.stack);
-      // Always return success to prevent PayPal from retrying
-      return { success: true };
+      return { received: false, error: error.message };
     }
   }
 
-  @Get('capture')
+  @Get('status')
   @UseGuards(JwtAuthGuard)
-  async capturePayment(@Query('orderId') orderId: string) {
-    this.logger.log(`Capturing payment for order ID: ${orderId}`);
+  async checkPaymentStatus(@Query('session_id') sessionId: string) {
+    this.logger.log(`Checking payment status for session ID: ${sessionId}`);
     try {
-      const payment = await this.paymentService.capturePayment(orderId);
+      const result = await this.paymentService.checkPaymentStatus(sessionId);
       return {
-        success: true,
-        paymentId: payment._id,
-        status: payment.status
+        success: result.success,
+        paymentId: result.paymentId,
+        invoiceId: result.invoiceId,
+        message: result.message,
       };
     } catch (error) {
-      this.logger.error(`Error capturing payment: ${error.message}`, error.stack);
-      throw new InternalServerErrorException('Failed to capture payment');
+      this.logger.error(`Error checking payment status: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to check payment status');
     }
   }
 }
