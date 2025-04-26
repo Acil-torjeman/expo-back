@@ -231,7 +231,7 @@ export class PaymentService {
    * Get PayPal API URL based on mode (sandbox/live)
    */
   private getPayPalApiUrl(endpoint: string): string {
-    const mode = this.configService.get<string>('paypal.mode') || 'sandbox';
+    const mode = this.configService.get<string>('paypal.mode');
     const baseUrl = mode === 'live' 
       ? 'https://api.paypal.com' 
       : 'https://api.sandbox.paypal.com';
