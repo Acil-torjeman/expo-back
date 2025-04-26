@@ -27,10 +27,10 @@ export class SeedService implements OnModuleInit {
 
   async createAdminAccount() {
     const adminEmail = 'admin@myexpo.com';
-    this.logger.log(`Checking if admin account exists: ${adminEmail}`);
+    this.logger.log(`Checking if admin account exists:`);
 
     // Vérifier si le compte admin existe déjà
-    const existingAdmin = await this.userModel.findOne({ email: adminEmail });
+    const existingAdmin = await this.userModel.findOne({ role: UserRole.ADMIN });
     
     if (existingAdmin) {
       this.logger.log('Admin account already exists');
