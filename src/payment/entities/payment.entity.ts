@@ -1,4 +1,3 @@
-// src/payment/entities/payment.entity.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
 import { Invoice } from '../../invoice/entities/invoice.entity';
@@ -12,7 +11,7 @@ export enum PaymentStatus {
 }
 
 export enum PaymentProvider {
-  PAYPAL = 'paypal'
+  STRIPE = 'stripe'  // Added Stripe as a valid provider
 }
 
 @Schema({ timestamps: true })
@@ -29,7 +28,7 @@ export class Payment extends Document {
   @Prop({ required: true, enum: PaymentStatus, default: PaymentStatus.PENDING })
   status: PaymentStatus;
 
-  @Prop({ required: true, enum: PaymentProvider, default: PaymentProvider.PAYPAL })
+  @Prop({ required: true, enum: PaymentProvider, default: PaymentProvider.STRIPE })
   provider: PaymentProvider;
 
   @Prop()

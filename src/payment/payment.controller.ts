@@ -48,6 +48,25 @@ export class PaymentController {
     }
   }
 
+  // Move this route before the :id route to prevent conflicts
+  @Get('payment-status')
+  @UseGuards(JwtAuthGuard)
+  async checkPaymentStatus(@Query('session_id') sessionId: string) {
+    this.logger.log(`Checking payment status for session ID: ${sessionId}`);
+    try {
+      const result = await this.paymentService.checkPaymentStatus(sessionId);
+      return {
+        success: result.success,
+        paymentId: result.paymentId,
+        invoiceId: result.invoiceId,
+        message: result.message,
+      };
+    } catch (error) {
+      this.logger.error(`Error checking payment status: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to check payment status');
+    }
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
@@ -82,24 +101,6 @@ export class PaymentController {
     } catch (error) {
       this.logger.error(`Error processing webhook: ${error.message}`, error.stack);
       return { received: false, error: error.message };
-    }
-  }
-
-  @Get('status')
-  @UseGuards(JwtAuthGuard)
-  async checkPaymentStatus(@Query('session_id') sessionId: string) {
-    this.logger.log(`Checking payment status for session ID: ${sessionId}`);
-    try {
-      const result = await this.paymentService.checkPaymentStatus(sessionId);
-      return {
-        success: result.success,
-        paymentId: result.paymentId,
-        invoiceId: result.invoiceId,
-        message: result.message,
-      };
-    } catch (error) {
-      this.logger.error(`Error checking payment status: ${error.message}`, error.stack);
-      throw new InternalServerErrorException('Failed to check payment status');
     }
   }
 }
