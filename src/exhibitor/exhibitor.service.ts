@@ -183,29 +183,19 @@ export class ExhibitorService {
   }
 
   async findOne(id: string): Promise<Exhibitor> {
-    this.logger.log(`Finding exhibitor with ID: ${id}`);
+    const exhibitor = await this.exhibitorModel.findById(id)
+      .populate({
+        path: 'company',
+        select: 'companyName tradeName companyAddress postalCity country sector subsector registrationNumber companySize website contactPhone contactPhoneCode companyDescription companyLogoPath kbisDocumentPath insuranceCertificatePath'
+      })
+      .populate('user', '-password -verificationToken -passwordResetToken -passwordResetExpires')
+      .exec();
     
-    // Ensure we're using a string ID, not a number
-    try {
-      const objectId = new Types.ObjectId(id.toString());
-      const exhibitor = await this.exhibitorModel.findById(objectId)
-        .populate('user', '-password -verificationToken -passwordResetToken -passwordResetExpires')
-        .populate('company')
-        .exec();
-      
-      if (!exhibitor) {
-        this.logger.warn(`Exhibitor with ID ${id} not found`);
-        throw new NotFoundException(`Exhibitor with ID ${id} not found`);
-      }
-      
-      // Log what we're returning
-      this.logger.log(`Found exhibitor with company: ${exhibitor.company ? 'yes' : 'no'}`);
-      
-      return exhibitor;
-    } catch (error) {
-      this.logger.error(`Error finding exhibitor ${id}: ${error.message}`);
-      throw error;
+    if (!exhibitor) {
+      throw new NotFoundException(`Exhibitor with ID ${id} not found`);
     }
+    
+    return exhibitor;
   }
   /**
    * Find exhibitor by user ID

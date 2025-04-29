@@ -60,4 +60,15 @@ export class FileController {
       return res.status(404).send('File not found');
     }
   }
+
+  @Get('uploads/exhibitor-documents/:filename')
+  getExhibitorDocument(@Param('filename') filename: string, @Res() res: Response) {
+    const filePath = join(process.cwd(), 'uploads', 'exhibitor-documents', filename);
+    
+    if (fs.existsSync(filePath)) {
+      return res.sendFile(filePath);
+    } else {
+      return res.status(404).send('File not found');
+    }
+  }
 }
