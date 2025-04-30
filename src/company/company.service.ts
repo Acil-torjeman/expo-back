@@ -1,7 +1,7 @@
 // src/company/company.service.ts
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, InternalServerErrorException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model } from 'mongoose';
+import { FilterQuery, Model, Types } from 'mongoose';
 import { Company } from './entities/company.entity';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
@@ -55,12 +55,20 @@ export class CompanyService {
   }
 
   /**
-   * Mettre à jour une entreprise
-   */
-  async update(id: string, updateCompanyDto: UpdateCompanyDto): Promise<Company> {
-    this.logger.log(`Updating company with ID: ${id}`);
+ * Update a company with improved error handling and logging
+ */
+async update(id: string, updateCompanyDto: UpdateCompanyDto): Promise<Company> {
+  try {
+    this.logger.log(`Updating company with ID: ${id} with data: ${JSON.stringify(updateCompanyDto)}`);
+    
+    // Convert ID string to MongoDB ObjectId
+    const objectId = new Types.ObjectId(id);
+    
+    // Log the actual update operation
+    this.logger.log(`Executing MongoDB findByIdAndUpdate on: ${objectId}, with $set operation`);
+    
     const existingCompany = await this.companyModel.findByIdAndUpdate(
-      id,
+      objectId,
       { $set: updateCompanyDto },
       { new: true },
     ).exec();
@@ -70,8 +78,23 @@ export class CompanyService {
       throw new NotFoundException(`Company with ID ${id} not found`);
     }
     
+    this.logger.log(`Successfully updated company: ${existingCompany._id}, updated fields: ${Object.keys(updateCompanyDto).join(', ')}`);
+    
     return existingCompany;
+  } catch (error) {
+    if (error instanceof NotFoundException) {
+      throw error;
+    }
+    
+    this.logger.error(`Error updating company ${id}: ${error.message}`, error.stack);
+    
+    if (error.name === 'CastError') {
+      throw new BadRequestException(`Invalid company ID format: ${id}`);
+    }
+    
+    throw new InternalServerErrorException(`Failed to update company: ${error.message}`);
   }
+}
 
   /**
    * Supprimer une entreprise

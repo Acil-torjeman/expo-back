@@ -1,3 +1,4 @@
+// src/user/user-profile.controller.ts
 import { 
   Controller, 
   Get, 
@@ -12,7 +13,9 @@ import {
   BadRequestException,
   Logger,
   HttpCode,
-  HttpStatus
+  HttpStatus,
+  InternalServerErrorException,
+  NotFoundException
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -31,6 +34,8 @@ import { Organizer } from '../organizer/entities/organizer.entity';
 import { Company } from '../company/entities/company.entity';
 import * as argon2 from 'argon2';
 import { User } from '../user/entities/user.entity';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
 
 @Controller('api/profile')
 @UseGuards(JwtAuthGuard)
@@ -41,7 +46,8 @@ export class UserProfileController {
     private readonly userService: UserService,
     private readonly exhibitorService: ExhibitorService,
     private readonly organizerService: OrganizerService,
-    private readonly companyService: CompanyService
+    private readonly companyService: CompanyService,
+    @InjectModel(Company.name) private companyModel: Model<Company>, // Inject Company model directly
   ) {}
 
   @Get()
@@ -267,7 +273,7 @@ export class UserProfileController {
     }
 
     const userId = req.user.id;
-    this.logger.log(`Uploading profile image for user: ${userId}`);
+    this.logger.log(`Uploading profile image for user: ${userId}, filename: ${file.filename}`);
     
     const user = await this.userService.findOne(userId);
     
@@ -278,26 +284,41 @@ export class UserProfileController {
     // Handle based on user role
     if (user.role === UserRole.EXHIBITOR) {
       try {
-        const exhibitor = await this.exhibitorService.findByUserId(userId) as Exhibitor & {
-          company: Company & { _id: any };
-        };
+        const exhibitor = await this.exhibitorService.findByUserId(userId);
         
         if (!exhibitor || !exhibitor.company) {
           throw new BadRequestException('Exhibitor company not found');
         }
+        
+        this.logger.log(`Found exhibitor (ID: ${exhibitor._id}) with company (ID: ${exhibitor.company._id})`);
         
         // Delete old logo file if it exists
         if (exhibitor.company.companyLogoPath) {
           this.deleteFile(exhibitor.company.companyLogoPath, 'exhibitor-documents');
         }
         
-        // Convert to string to ensure valid format
-        const companyId = exhibitor.company._id.toString();
+        // Extract company ID safely
+        let companyId;
+        if (typeof exhibitor.company._id === 'object' && exhibitor.company._id !== null) {
+          companyId = exhibitor.company._id.toString();
+        } else {
+          companyId = String(exhibitor.company._id);
+        }
         
-        // Update company logo
-        await this.companyService.update(companyId, {
-          companyLogoPath: file.filename
-        });
+        this.logger.log(`Updating company ${companyId} with new logo path: ${file.filename}`);
+        
+        // Use direct Mongoose model update for maximum reliability
+        // This bypasses potential issues in the service layer
+        const updateResult = await this.companyModel.updateOne(
+          { _id: new Types.ObjectId(companyId) },
+          { $set: { companyLogoPath: file.filename } }
+        );
+        
+        if (updateResult.modifiedCount === 0) {
+          throw new BadRequestException(`Failed to update company logo in database`);
+        }
+        
+        this.logger.log(`Company logo updated successfully. Database update result: ${JSON.stringify(updateResult)}`);
         
         return { 
           message: 'Company logo updated successfully',
@@ -309,19 +330,15 @@ export class UserProfileController {
       }
     } else if (user.role === UserRole.ORGANIZER) {
       try {
-        const organizer = await this.organizerService.findByUserId(userId) as Organizer & {
-          _id: any;
-        };
+        const organizer = await this.organizerService.findByUserId(userId) as Organizer & { _id: Types.ObjectId };
         
         // Delete old logo file if it exists
         if (organizer.organizationLogoPath) {
           this.deleteFile(organizer.organizationLogoPath, 'organization-logos');
         }
         
-        // Convert to string to ensure valid format
+        // Update organizer logo path
         const organizerId = organizer._id.toString();
-        
-        // Update organizer using string ID, not number conversion
         await this.organizerService.update(organizerId, {
           organizationLogoPath: file.filename
         });
