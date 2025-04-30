@@ -199,7 +199,7 @@ export class RegistrationService {
           },
           { 
             path: 'company',
-            select: 'companyName registrationNumber companyAddress postalCity country sector subsector companyDescription contactPhone contactPhoneCode companyLogoPath'
+            select: 'companyName tradeName companyAddress postalCity country sector subsector registrationNumber companySize website contactPhone contactPhoneCode companyDescription kbisDocumentPath companyLogoPath insuranceCertificatePath'
           }
         ]
       })
@@ -215,10 +215,8 @@ export class RegistrationService {
     
     return registration;
   }
+   // Find registrations by exhibitor ID
 
-  /**
-   * Find registrations by exhibitor ID
-   */
   async findByExhibitor(exhibitorId: string): Promise<Registration[]> {
     this.logger.log(`Finding registrations for exhibitor: ${exhibitorId}`);
     
@@ -250,7 +248,7 @@ export class RegistrationService {
           }
         ]
       })
-      .populate('event', 'name startDate endDate location type')
+      .populate('event', 'name startDate endDate location type openingHours')
       .populate('stands', 'number area type basePrice status')
       .populate('equipment', 'name description price type')
       .populate('reviewedBy', 'username email')

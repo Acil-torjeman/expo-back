@@ -1,3 +1,4 @@
+// src/file/file.controller.ts
 import { Controller, Get, Param, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { join } from 'path';
@@ -64,6 +65,17 @@ export class FileController {
   @Get('uploads/exhibitor-documents/:filename')
   getExhibitorDocument(@Param('filename') filename: string, @Res() res: Response) {
     const filePath = join(process.cwd(), 'uploads', 'exhibitor-documents', filename);
+    
+    if (fs.existsSync(filePath)) {
+      return res.sendFile(filePath);
+    } else {
+      return res.status(404).send('File not found');
+    }
+  }
+  
+  @Get('uploads/profile-images/:filename')
+  getProfileImage(@Param('filename') filename: string, @Res() res: Response) {
+    const filePath = join(process.cwd(), 'uploads', 'profile-images', filename);
     
     if (fs.existsSync(filePath)) {
       return res.sendFile(filePath);

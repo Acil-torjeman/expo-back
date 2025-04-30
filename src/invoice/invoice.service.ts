@@ -693,9 +693,8 @@ export class InvoiceService {
     return invoice;
   }
 
-  /**
-   * Find invoices for an exhibitor
-   */
+
+  //Find invoices for an exhibitor
   async findByExhibitor(exhibitorId: string): Promise<Invoice[]> {
     return this.invoiceModel.find({ exhibitor: exhibitorId })
       .populate('event')
@@ -704,17 +703,41 @@ export class InvoiceService {
       .exec();
   }
 
-  /**
-   * Find invoices for an organizer
-   */
-  async findByOrganizer(organizerId: string): Promise<Invoice[]> {
-    return this.invoiceModel.find({ organizer: organizerId })
+
+ /**
+ * Find invoices for an organizer using User ID
+ * @param {string} userId - User ID of the organizer
+ * @returns {Promise<Invoice[]>} List of invoices
+ */
+async findByOrganizer(userId: string): Promise<Invoice[]> {
+  this.logger.log(`Finding invoices for organizer with user ID: ${userId}`);
+  
+  try {
+    // Première étape: trouver l'organisateur correspondant à l'ID utilisateur
+    const organizer = await this.organizerModel.findOne({ user: userId }).exec();
+    
+    if (!organizer) {
+      this.logger.warn(`No organizer found for user ID ${userId}`);
+      return [];
+    }
+    
+    this.logger.log(`Found organizer with ID: ${organizer._id}`);
+    return this.invoiceModel.find({ organizer: organizer._id })
       .populate('event')
-      .populate('exhibitor')
+      .populate({
+        path: 'exhibitor',
+        populate: {
+          path: 'company',
+          select: 'companyName companyLogoPath country sector'
+        }
+      })
       .sort({ createdAt: -1 })
       .exec();
+  } catch (error) {
+    this.logger.error(`Error finding invoices for organizer user ${userId}: ${error.message}`);
+    return [];
   }
-
+}
   /**
    * Update invoice status
    */

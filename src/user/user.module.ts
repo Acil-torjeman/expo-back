@@ -9,22 +9,30 @@ import { PlanModule } from '../plan/plan.module';
 import { StandModule } from '../stand/stand.module';
 import { EquipmentModule } from '../equipment/equipment.module';
 import { EventModule } from '../event/event.module';
+import { UserProfileController } from './user-profile.controller';
+import { UserProfileService } from './user-profile.service';
+import { CompanyModule } from '../company/company.module';
+import { ExhibitorModule } from '../exhibitor/exhibitor.module';
+import { OrganizerModule } from '../organizer/organizer.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
     ]),
-    // Utiliser forwardRef pour éviter la dépendance circulaire
-       forwardRef(() => AuthModule),
-       forwardRef(() => UserModule),
-       forwardRef(() => PlanModule),
-       forwardRef(() => StandModule),
-       forwardRef(() => EquipmentModule),
-       forwardRef(() => EventModule),
+    // Avoid circular dependencies
+    forwardRef(() => AuthModule),
+    forwardRef(() => UserModule),
+    forwardRef(() => PlanModule),
+    forwardRef(() => StandModule),
+    forwardRef(() => EquipmentModule),
+    forwardRef(() => EventModule),
+    forwardRef(() => CompanyModule),
+    forwardRef(() => ExhibitorModule),
+    forwardRef(() => OrganizerModule),
   ],
-  controllers: [UserController],
-  providers: [UserService],
-  exports: [UserService],
+  controllers: [UserController, UserProfileController],
+  providers: [UserService, UserProfileService],
+  exports: [UserService, UserProfileService],
 })
 export class UserModule {}

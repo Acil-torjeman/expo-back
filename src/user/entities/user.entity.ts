@@ -59,6 +59,10 @@ export class User extends Document {
   @Prop()
   passwordResetExpires?: Date;
 
+  // Added avatar field for profile image
+  @Prop()
+  avatar?: string;
+
   // Champs additionnels qui pourraient être utiles
   @Prop()
   lastLogin?: Date;
