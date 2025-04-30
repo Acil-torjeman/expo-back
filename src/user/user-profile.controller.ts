@@ -88,8 +88,17 @@ export class UserProfileController {
       }
     }
     
+    // Ensure user properties are explicitly included
+    const userInfo = {
+      id: (user as any)._id.toString(),
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar || null
+    };
+    
     return {
-      ...user,
+      ...userInfo,
       ...roleData
     };
   }
