@@ -1,4 +1,3 @@
-// src/user/user-profile.controller.ts
 import { 
   Controller, 
   Get, 
@@ -17,7 +16,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { extname, join } from 'path';
 import * as fs from 'fs';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UserService } from './user.service';
@@ -179,7 +178,7 @@ export class UserProfileController {
           );
           
           if (Object.keys(organizerFields).length > 0) {
-            await this.organizerService.update(+organizerId, organizerFields);
+            await this.organizerService.update(organizerId, organizerFields);
           }
         }
       } catch (error) {
@@ -280,15 +279,23 @@ export class UserProfileController {
     if (user.role === UserRole.EXHIBITOR) {
       try {
         const exhibitor = await this.exhibitorService.findByUserId(userId) as Exhibitor & {
-          company: Company & { _id: string };
+          company: Company & { _id: any };
         };
         
         if (!exhibitor || !exhibitor.company) {
           throw new BadRequestException('Exhibitor company not found');
         }
         
+        // Delete old logo file if it exists
+        if (exhibitor.company.companyLogoPath) {
+          this.deleteFile(exhibitor.company.companyLogoPath, 'exhibitor-documents');
+        }
+        
+        // Convert to string to ensure valid format
+        const companyId = exhibitor.company._id.toString();
+        
         // Update company logo
-        await this.companyService.update(exhibitor.company._id.toString(), {
+        await this.companyService.update(companyId, {
           companyLogoPath: file.filename
         });
         
@@ -297,17 +304,25 @@ export class UserProfileController {
           filename: file.filename
         };
       } catch (error) {
-        this.logger.error(`Error updating company logo: ${error.message}`);
-        throw new BadRequestException('Failed to update company logo');
+        this.logger.error(`Error updating company logo: ${error.message}`, error.stack);
+        throw new BadRequestException(`Failed to update company logo: ${error.message}`);
       }
     } else if (user.role === UserRole.ORGANIZER) {
       try {
         const organizer = await this.organizerService.findByUserId(userId) as Organizer & {
-          _id: string;
+          _id: any;
         };
         
-        // Update organization logo
-        await this.organizerService.update(+organizer._id.toString(), {
+        // Delete old logo file if it exists
+        if (organizer.organizationLogoPath) {
+          this.deleteFile(organizer.organizationLogoPath, 'organization-logos');
+        }
+        
+        // Convert to string to ensure valid format
+        const organizerId = organizer._id.toString();
+        
+        // Update organizer using string ID, not number conversion
+        await this.organizerService.update(organizerId, {
           organizationLogoPath: file.filename
         });
         
@@ -316,12 +331,17 @@ export class UserProfileController {
           filename: file.filename
         };
       } catch (error) {
-        this.logger.error(`Error updating organization logo: ${error.message}`);
-        throw new BadRequestException('Failed to update organization logo');
+        this.logger.error(`Error updating organization logo: ${error.message}`, error.stack);
+        throw new BadRequestException(`Failed to update organization logo: ${error.message}`);
       }
     } else {
       // For admin users or others, update the avatar field
       try {
+        // Delete old avatar file if it exists
+        if (user.avatar) {
+          this.deleteFile(user.avatar, 'profile-images');
+        }
+        
         await this.userService.update(userId, { avatar: file.filename });
         
         return { 
@@ -329,9 +349,25 @@ export class UserProfileController {
           filename: file.filename
         };
       } catch (error) {
-        this.logger.error(`Error updating user avatar: ${error.message}`);
+        this.logger.error(`Error updating user avatar: ${error.message}`, error.stack);
         throw new BadRequestException('Failed to update profile image');
       }
+    }
+  }
+
+  /**
+   * Helper method to delete a file from the filesystem
+   */
+  private deleteFile(filename: string, directory: string) {
+    try {
+      const filePath = join(process.cwd(), 'uploads', directory, filename);
+      
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        this.logger.log(`Deleted old file: ${filePath}`);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to delete file: ${error.message}`);
     }
   }
 }

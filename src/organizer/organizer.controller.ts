@@ -123,7 +123,7 @@ export class OrganizerController {
   @Roles(UserRole.ADMIN, UserRole.ORGANIZER)
   update(@Param('id') id: string, @Body() updateOrganizerDto: UpdateOrganizerDto) {
     this.logger.log(`Updating organizer with ID: ${id}`);
-    return this.organizerService.update(+id, updateOrganizerDto);
+    return this.organizerService.update(id, updateOrganizerDto);
   }
 
   @Delete(':id')

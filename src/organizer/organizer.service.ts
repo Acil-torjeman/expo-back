@@ -188,11 +188,9 @@ export class OrganizerService {
     return organizer;
   }
 
-  /**
-   * Update organizer
-   */
-  async update(id: number, updateOrganizerDto: UpdateOrganizerDto): Promise<Organizer> {
+  async update(id: string, updateOrganizerDto: UpdateOrganizerDto): Promise<Organizer> {
     this.logger.log(`Updating organizer with ID: ${id}`);
+    
     const existingOrganizer = await this.organizerModel.findByIdAndUpdate(
       id,
       { $set: updateOrganizerDto },
