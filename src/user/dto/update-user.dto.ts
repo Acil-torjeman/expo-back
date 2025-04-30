@@ -28,4 +28,7 @@ export class UpdateUserDto {
   @IsOptional()
   @IsEnum(UserStatus, { message: 'Invalid user status' })
   status?: UserStatus;
+ 
+  avatar?: string;
+  
 }

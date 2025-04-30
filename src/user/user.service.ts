@@ -539,6 +539,51 @@ export class UserService {
   }
 
   /**
+ * Get user with password for authentication
+ * @param idOrEmail User ID or email
+ * @returns User with password
+ */
+async findUserWithPassword(idOrEmail: string): Promise<User> {
+  let user: User | null;
+  
+  // Check if input is an email or ID
+  if (idOrEmail.includes('@')) {
+    user = await this.userModel.findOne({ 
+      email: idOrEmail.toLowerCase(),
+      deleted: { $ne: true }
+    }).select('+password').exec();
+  } else {
+    user = await this.userModel.findById(idOrEmail)
+      .select('+password')
+      .exec();
+  }
+  
+  if (!user) {
+    throw new NotFoundException('User not found');
+  }
+  
+  return user;
+}
+
+ /**
+ * Update user password
+ * @param userId User ID
+ * @param newPassword New password (unhashed)
+ */
+async updatePassword(userId: string, newPassword: string): Promise<void> {
+  const user = await this.userModel.findById(userId);
+  
+  if (!user) {
+    throw new NotFoundException('User not found');
+  }
+  
+  // Password will be hashed by the pre-save hook in the schema
+  user.password = newPassword;
+  await user.save();
+  
+  this.logger.log(`Password updated for user: ${userId}`);
+}
+  /**
    * Send email notification for user restoration
    */
   private async sendUserRestorationEmail(email: string): Promise<boolean> {
