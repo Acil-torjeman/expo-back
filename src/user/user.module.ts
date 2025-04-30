@@ -14,11 +14,13 @@ import { UserProfileService } from './user-profile.service';
 import { CompanyModule } from '../company/company.module';
 import { ExhibitorModule } from '../exhibitor/exhibitor.module';
 import { OrganizerModule } from '../organizer/organizer.module';
+import { Company, CompanySchema } from '../company/entities/company.entity';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
+      { name: Company.name, schema: CompanySchema }, // Add Company schema to UserModule
     ]),
     // Avoid circular dependencies
     forwardRef(() => AuthModule),
