@@ -57,45 +57,95 @@ export class CompanyService {
   /**
  * Update a company with improved error handling and logging
  */
-async update(id: string, updateCompanyDto: UpdateCompanyDto): Promise<Company> {
+  async update(id: string, updateCompanyDto: UpdateCompanyDto): Promise<Company> {
+    try {
+      this.logger.log(`Updating company with ID: ${id} with data: ${JSON.stringify(updateCompanyDto)}`);
+      
+      // Ensure valid data
+      if (!id || !updateCompanyDto) {
+        throw new BadRequestException('Invalid company update data');
+      }
+      
+      // Direct MongoDB approach to ensure update occurs
+      const result = await this.companyModel.updateOne(
+        { _id: new Types.ObjectId(id) },
+        { $set: updateCompanyDto }
+      );
+      
+      this.logger.log(`Update result: ${JSON.stringify(result)}`);
+      
+      if (result.matchedCount === 0) {
+        throw new NotFoundException(`Company with ID ${id} not found`);
+      }
+      
+      if (result.modifiedCount === 0 && result.matchedCount > 0) {
+        this.logger.warn(`Company found but no changes made. ID: ${id}`);
+      }
+      
+      // Fetch and return the updated company
+      const updatedCompany = await this.companyModel.findById(id).exec();
+      if (!updatedCompany) {
+        throw new NotFoundException(`Updated company with ID ${id} not found`);
+      }
+      return updatedCompany;
+    } catch (error) {
+      this.logger.error(`Error updating company ${id}: ${error.message}`, error.stack);
+      
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      if (error.name === 'CastError') {
+        throw new BadRequestException(`Invalid company ID format: ${id}`);
+      }
+      
+      throw new InternalServerErrorException(`Failed to update company: ${error.message}`);
+    }
+  }
+ /**
+ * Update company logo path
+ * @param id Company ID
+ * @param logoPath New logo file path
+ */
+async updateLogo(id: string, logoPath: string): Promise<Company> {
+  this.logger.log(`Updating logo for company ${id} to ${logoPath}`);
+  
   try {
-    this.logger.log(`Updating company with ID: ${id} with data: ${JSON.stringify(updateCompanyDto)}`);
-    
-    // Convert ID string to MongoDB ObjectId
+    // Convert string ID to ObjectId
     const objectId = new Types.ObjectId(id);
     
-    // Log the actual update operation
-    this.logger.log(`Executing MongoDB findByIdAndUpdate on: ${objectId}, with $set operation`);
+    // Update the company logo path
+    const updateResult = await this.companyModel.updateOne(
+      { _id: objectId },
+      { $set: { companyLogoPath: logoPath } }
+    );
     
-    const existingCompany = await this.companyModel.findByIdAndUpdate(
-      objectId,
-      { $set: updateCompanyDto },
-      { new: true },
-    ).exec();
-    
-    if (!existingCompany) {
-      this.logger.warn(`Company with ID ${id} not found for update`);
+    if (updateResult.matchedCount === 0) {
       throw new NotFoundException(`Company with ID ${id} not found`);
     }
     
-    this.logger.log(`Successfully updated company: ${existingCompany._id}, updated fields: ${Object.keys(updateCompanyDto).join(', ')}`);
+    // Fetch and return the updated company
+    const updatedCompany = await this.companyModel.findById(id);
     
-    return existingCompany;
+    if (!updatedCompany) {
+      throw new NotFoundException(`Company with ID ${id} not found after update`);
+    }
+    
+    return updatedCompany;
   } catch (error) {
+    this.logger.error(`Error updating company logo: ${error.message}`);
+    
     if (error instanceof NotFoundException) {
       throw error;
     }
-    
-    this.logger.error(`Error updating company ${id}: ${error.message}`, error.stack);
     
     if (error.name === 'CastError') {
       throw new BadRequestException(`Invalid company ID format: ${id}`);
     }
     
-    throw new InternalServerErrorException(`Failed to update company: ${error.message}`);
+    throw new InternalServerErrorException(`Failed to update company logo: ${error.message}`);
   }
 }
-
   /**
    * Supprimer une entreprise
    */

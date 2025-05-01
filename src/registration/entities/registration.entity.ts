@@ -64,6 +64,8 @@ export class Registration extends Document {
     equipment: Equipment | Types.ObjectId;
     quantity: number;
   }>;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export const RegistrationSchema = SchemaFactory.createForClass(Registration);

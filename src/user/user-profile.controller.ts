@@ -37,6 +37,7 @@ import { User } from '../user/entities/user.entity';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 
+
 @Controller('api/profile')
 @UseGuards(JwtAuthGuard)
 export class UserProfileController {
@@ -223,155 +224,141 @@ export class UserProfileController {
     return { message: 'Password changed successfully' };
   }
 
-  @Post('image')
-  @UseInterceptors(
-    FileInterceptor('image', {
-      storage: diskStorage({
-        destination: (req, file, cb) => {
-          // Determine the upload directory based on user role
-          const user = req.user;
-          let uploadDir = './uploads/profile-images';
-          
-          if (user.role === UserRole.EXHIBITOR) {
-            uploadDir = './uploads/exhibitor-documents';
-          } else if (user.role === UserRole.ORGANIZER) {
-            uploadDir = './uploads/organization-logos';
-          }
-          
-          // Ensure the directory exists
-          if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-          }
-          
-          cb(null, uploadDir);
-        },
-        filename: (req, file, cb) => {
-          // Generate a unique filename with the original extension
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join('');
-          const fileExt = extname(file.originalname);
-          cb(null, `${randomName}${fileExt}`);
-        },
-      }),
-      fileFilter: (req, file, cb) => {
-        // Check file type
-        if (!file.mimetype.match(/\/(jpg|jpeg|png|gif)$/)) {
-          return cb(new UnprocessableEntityException('Only image files are allowed'), false);
+  // src/user/user-profile.controller.ts - Cleaned up uploadProfileImage method
+
+@Post('image')
+@UseInterceptors(
+  FileInterceptor('image', {
+    storage: diskStorage({
+      destination: (req, file, cb) => {
+        // Determine the upload directory based on user role
+        const user = req.user;
+        let uploadDir = './uploads/profile-images';
+        
+        if (user.role === UserRole.EXHIBITOR) {
+          uploadDir = './uploads/exhibitor-documents';
+        } else if (user.role === UserRole.ORGANIZER) {
+          uploadDir = './uploads/organization-logos';
         }
-        cb(null, true);
+        
+        // Ensure the directory exists
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        
+        cb(null, uploadDir);
       },
-      limits: {
-        fileSize: 2 * 1024 * 1024, // 2MB
+      filename: (req, file, cb) => {
+        // Generate a unique filename
+        const randomName = Array(32)
+          .fill(null)
+          .map(() => Math.round(Math.random() * 16).toString(16))
+          .join('');
+        const fileExt = extname(file.originalname);
+        cb(null, `${randomName}${fileExt}`);
       },
     }),
-  )
-  async uploadProfileImage(@Req() req, @UploadedFile() file) {
-    if (!file) {
-      throw new BadRequestException('No file uploaded');
-    }
-
-    const userId = req.user.id;
-    this.logger.log(`Uploading profile image for user: ${userId}, filename: ${file.filename}`);
-    
-    const user = await this.userService.findOne(userId);
-    
-    if (!user) {
-      throw new BadRequestException('User not found');
-    }
-    
-    // Handle based on user role
-    if (user.role === UserRole.EXHIBITOR) {
-      try {
-        const exhibitor = await this.exhibitorService.findByUserId(userId);
-        
-        if (!exhibitor || !exhibitor.company) {
-          throw new BadRequestException('Exhibitor company not found');
-        }
-        
-        this.logger.log(`Found exhibitor (ID: ${exhibitor._id}) with company (ID: ${exhibitor.company._id})`);
-        
-        // Delete old logo file if it exists
-        if (exhibitor.company.companyLogoPath) {
-          this.deleteFile(exhibitor.company.companyLogoPath, 'exhibitor-documents');
-        }
-        
-        // Extract company ID safely
-        let companyId;
-        if (typeof exhibitor.company._id === 'object' && exhibitor.company._id !== null) {
-          companyId = exhibitor.company._id.toString();
-        } else {
-          companyId = String(exhibitor.company._id);
-        }
-        
-        this.logger.log(`Updating company ${companyId} with new logo path: ${file.filename}`);
-        
-        // Use direct Mongoose model update for maximum reliability
-        // This bypasses potential issues in the service layer
-        const updateResult = await this.companyModel.updateOne(
-          { _id: new Types.ObjectId(companyId) },
-          { $set: { companyLogoPath: file.filename } }
-        );
-        
-        if (updateResult.modifiedCount === 0) {
-          throw new BadRequestException(`Failed to update company logo in database`);
-        }
-        
-        this.logger.log(`Company logo updated successfully. Database update result: ${JSON.stringify(updateResult)}`);
-        
-        return { 
-          message: 'Company logo updated successfully',
-          filename: file.filename
-        };
-      } catch (error) {
-        this.logger.error(`Error updating company logo: ${error.message}`, error.stack);
-        throw new BadRequestException(`Failed to update company logo: ${error.message}`);
+    fileFilter: (req, file, cb) => {
+      // Only allow image files
+      if (!file.mimetype.match(/\/(jpg|jpeg|png|gif)$/)) {
+        return cb(new UnprocessableEntityException('Only image files are allowed'), false);
       }
-    } else if (user.role === UserRole.ORGANIZER) {
-      try {
-        const organizer = await this.organizerService.findByUserId(userId) as Organizer & { _id: Types.ObjectId };
-        
-        // Delete old logo file if it exists
-        if (organizer.organizationLogoPath) {
-          this.deleteFile(organizer.organizationLogoPath, 'organization-logos');
-        }
-        
-        // Update organizer logo path
-        const organizerId = organizer._id.toString();
-        await this.organizerService.update(organizerId, {
-          organizationLogoPath: file.filename
-        });
-        
-        return { 
-          message: 'Organization logo updated successfully',
-          filename: file.filename
-        };
-      } catch (error) {
-        this.logger.error(`Error updating organization logo: ${error.message}`, error.stack);
-        throw new BadRequestException(`Failed to update organization logo: ${error.message}`);
-      }
-    } else {
-      // For admin users or others, update the avatar field
-      try {
-        // Delete old avatar file if it exists
-        if (user.avatar) {
-          this.deleteFile(user.avatar, 'profile-images');
-        }
-        
-        await this.userService.update(userId, { avatar: file.filename });
-        
-        return { 
-          message: 'Profile image updated successfully',
-          filename: file.filename
-        };
-      } catch (error) {
-        this.logger.error(`Error updating user avatar: ${error.message}`, error.stack);
-        throw new BadRequestException('Failed to update profile image');
-      }
-    }
+      cb(null, true);
+    },
+    limits: {
+      fileSize: 2 * 1024 * 1024, // 2MB
+    },
+  }),
+)
+async uploadProfileImage(@Req() req, @UploadedFile() file) {
+  if (!file) {
+    throw new BadRequestException('No file uploaded');
   }
 
+  const userId = req.user.id;
+  this.logger.log(`Uploading profile image for user: ${userId}, filename: ${file.filename}`);
+  
+  const user = await this.userService.findOne(userId);
+  
+  if (!user) {
+    throw new BadRequestException('User not found');
+  }
+  
+  // Handle based on user role
+  if (user.role === UserRole.EXHIBITOR) {
+    try {
+      const exhibitor = await this.exhibitorService.findByUserId(userId) as Exhibitor & {
+        company: Company & { _id: Types.ObjectId };
+      };
+      
+      if (!exhibitor || !exhibitor.company) {
+        throw new BadRequestException('Exhibitor company not found');
+      }
+      
+      // Get company ID safely
+      const companyId = exhibitor.company._id.toString();
+      
+      // Delete old logo file if it exists
+      if (exhibitor.company.companyLogoPath) {
+        this.deleteFile(exhibitor.company.companyLogoPath, 'exhibitor-documents');
+      }
+      
+      // Update company logo using the CompanyService
+      await this.companyService.updateLogo(companyId, file.filename);
+      
+      return {
+        message: 'Company logo updated successfully',
+        filename: file.filename
+      };
+    } catch (error) {
+      this.logger.error(`Error updating company logo: ${error.message}`);
+      throw new BadRequestException(`Failed to update company logo: ${error.message}`);
+    }
+  } else if (user.role === UserRole.ORGANIZER) {
+    try {
+      const organizer = await this.organizerService.findByUserId(userId) as Organizer & {
+        _id: Types.ObjectId;
+      };
+      
+      // Delete old logo file if it exists
+      if (organizer.organizationLogoPath) {
+        this.deleteFile(organizer.organizationLogoPath, 'organization-logos');
+      }
+      
+      // Update organizer logo path
+      const organizerId = organizer._id.toString();
+      await this.organizerService.update(organizerId, {
+        organizationLogoPath: file.filename
+      });
+      
+      return {
+        message: 'Organization logo updated successfully',
+        filename: file.filename
+      };
+    } catch (error) {
+      this.logger.error(`Error updating organization logo: ${error.message}`);
+      throw new BadRequestException(`Failed to update organization logo: ${error.message}`);
+    }
+  } else {
+    // For admin users or others, update the avatar field
+    try {
+      // Delete old avatar file if it exists
+      if (user.avatar) {
+        this.deleteFile(user.avatar, 'profile-images');
+      }
+      
+      await this.userService.update(userId, { avatar: file.filename });
+      
+      return {
+        message: 'Profile image updated successfully',
+        filename: file.filename
+      };
+    } catch (error) {
+      this.logger.error(`Error updating user avatar: ${error.message}`);
+      throw new BadRequestException('Failed to update profile image');
+    }
+  }
+}
   /**
    * Helper method to delete a file from the filesystem
    */
