@@ -1,5 +1,5 @@
 // src/analytics/analytics.service.ts
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Analytics } from './entities/analytics.entity';
@@ -8,12 +8,11 @@ import { Event } from '../event/entities/event.entity';
 import { Stand, StandStatus } from '../stand/entities/stand.entity';
 import { Invoice, InvoiceStatus } from '../invoice/entities/invoice.entity';
 import { Organizer } from '../organizer/entities/organizer.entity';
-import { AnalyticsDemoHelper } from './analytics-demo-helper';
+import { User } from '../user/entities/user.entity';
 
 @Injectable()
 export class AnalyticsService {
   private readonly logger = new Logger(AnalyticsService.name);
-  private readonly demoHelper = new AnalyticsDemoHelper();
 
   constructor(
     @InjectModel(Analytics.name) private analyticsModel: Model<Analytics>,
@@ -22,6 +21,7 @@ export class AnalyticsService {
     @InjectModel(Stand.name) private standModel: Model<Stand>,
     @InjectModel(Invoice.name) private invoiceModel: Model<Invoice>,
     @InjectModel(Organizer.name) private organizerModel: Model<Organizer>,
+    @InjectModel(User.name) private userModel: Model<User>,
   ) {}
 
   /**
@@ -36,17 +36,20 @@ export class AnalyticsService {
       if (!organizer) {
         throw new NotFoundException(`Organizer with ID ${organizerId} not found`);
       }
+
+      // Get the user ID associated with this organizer - this is the key fix
+      const userId = organizer.user;
+      this.logger.log(`Found organizer's user ID: ${userId}`);
       
       // Set date range for analytics
       const { startDate, endDate } = this.getDateRange(period);
       
-      // Query for events by this organizer - important modification here
+      // Query for events by this organizer's user ID - this is the key fix
       const eventsQuery: any = { 
-        organizer: new Types.ObjectId(organizerId)
+        organizer: userId
       };
       
-      // Log the exact query we're using for events
-      this.logger.log(`Events query: ${JSON.stringify(eventsQuery)}`);
+      this.logger.log(`Events query using user ID: ${JSON.stringify(eventsQuery)}`);
       
       // If specific event requested, add to query
       if (eventId) {
@@ -56,7 +59,6 @@ export class AnalyticsService {
       // Get events for this organizer
       const events = await this.eventModel.find(eventsQuery).exec();
       
-      // Log exact query results
       this.logger.log(`Events found: ${events.length}`);
       if (events.length > 0) {
         this.logger.log(`First event details: ${JSON.stringify({
@@ -67,8 +69,8 @@ export class AnalyticsService {
       }
       
       if (events.length === 0) {
-        this.logger.log('No events found, returning demo data');
-        return this.demoHelper.generateDemoData(startDate, endDate);
+        this.logger.log('No events found, returning empty data');
+        return this.getEmptyResponse(startDate, endDate);
       }
       
       const eventIds = events.map(event => event._id);
@@ -88,14 +90,7 @@ export class AnalyticsService {
         endDate
       );
       
-      // Check if all KPIs are zero - if so, use demo data instead
-      const hasRealData = this.hasNonZeroValues(kpis);
-      
-      if (!hasRealData) {
-        this.logger.log('All KPIs are zero, returning demo data instead');
-        return this.demoHelper.generateDemoData(startDate, endDate);
-      }
-      
+      // No longer checking for hasNonZeroValues to switch to demo data
       return {
         period: { startDate, endDate },
         kpis,
@@ -108,19 +103,35 @@ export class AnalyticsService {
   }
 
   /**
-   * Check if KPIs contain any non-zero values
+   * Generate empty response structure
    */
-  private hasNonZeroValues(kpis: any): boolean {
-    if (!kpis) return false;
+  private getEmptyResponse(startDate: Date, endDate: Date): any {
+    return {
+      period: { startDate, endDate },
+      kpis: this.getEmptyKpiResponse(),
+      timeSeriesData: this.generateEmptyTimeSeriesData(startDate, endDate)
+    };
+  }
+
+  /**
+   * Generate empty time series data structure
+   */
+  private generateEmptyTimeSeriesData(startDate: Date, endDate: Date): any {
+    const datePoints = this.generateDatePoints(startDate, endDate, 8);
     
-    return (
-      (kpis.processingTime?.value > 0) || 
-      (kpis.paymentTime?.value > 0) ||
-      (kpis.validatedBeforeDeadline?.value > 0) ||
-      (kpis.standsBeforeEvent?.value > 0) ||
-      (kpis.pendingRequests?.value > 0) ||
-      (kpis.standsOccupation?.occupied > 0)
-    );
+    return {
+      datePoints: datePoints.map(d => this.formatDateString(d)),
+      processingTimeData: Array(datePoints.length).fill(0),
+      paymentTimeData: Array(datePoints.length).fill(0),
+      pendingRequestsData: Array(datePoints.length).fill(0),
+      standsOccupationData: datePoints.map(date => ({
+        date: this.formatDateString(date),
+        available: 0,
+        occupied: 0,
+        total: 0,
+        rate: 0
+      }))
+    };
   }
 
   /**
@@ -189,7 +200,7 @@ export class AnalyticsService {
    */
   private async calculateAverageProcessingTime(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<any> {
     try {
-      // Correction importante ici - supprimer la restriction de date qui pourrait filtrer toutes les données
+      // Remove date restriction that might filter out all data
       const registrations = await this.registrationModel.find({
         event: { $in: eventIds },
         $or: [
@@ -233,7 +244,6 @@ export class AnalyticsService {
       const average = validCount > 0 ? totalHours / validCount : 0;
       
       // Calculate trend compared to previous period
-      // This would require historical data storage for proper calculation
       const trend = 0;
       
       return {
@@ -431,7 +441,7 @@ export class AnalyticsService {
    */
   private async calculatePendingRequests(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<any> {
     try {
-      // Enlever la restriction de date createdAt
+      // Remove date restriction
       const pendingCount = await this.registrationModel.countDocuments({
         event: { $in: eventIds },
         status: RegistrationStatus.PENDING
@@ -567,30 +577,8 @@ export class AnalyticsService {
       };
     } catch (error) {
       this.logger.error(`Error generating time series data: ${error.message}`, error.stack);
-      return this.generateDemoTimeSeriesData(startDate, endDate);
+      return this.generateEmptyTimeSeriesData(startDate, endDate);
     }
-  }
-  
-  /**
-   * Generate demo time series data (when no real data exists)
-   */
-  private generateDemoTimeSeriesData(startDate: Date, endDate: Date): any {
-    const datePoints = this.generateDatePoints(startDate, endDate, 8);
-    
-    // Return empty data arrays matching the date points length
-    return {
-      datePoints: datePoints.map(d => this.formatDateString(d)),
-      processingTimeData: Array(datePoints.length).fill(0),
-      paymentTimeData: Array(datePoints.length).fill(0),
-      pendingRequestsData: Array(datePoints.length).fill(0),
-      standsOccupationData: datePoints.map(date => ({
-        date: this.formatDateString(date),
-        available: 0,
-        occupied: 0,
-        total: 0,
-        rate: 0
-      }))
-    };
   }
   
   /**
@@ -684,7 +672,7 @@ export class AnalyticsService {
         const registration = invoice.registration;
         if (!registration || !registration.approvalDate) continue;
         
-        // Gestion sécurisée du type pour registration.event
+        // Safe handling of registration.event type
         let eventId: Types.ObjectId | null = null;
         if (typeof registration.event === 'object' && registration.event?._id) {
           eventId = new Types.ObjectId(registration.event._id.toString());

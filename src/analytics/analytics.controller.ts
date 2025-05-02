@@ -611,9 +611,6 @@ export class AnalyticsController {
     }
   }
 
-  /**
-   * Helper method to get organizer from user ID
-   */
   private async getOrganizerByUserId(userId: string): Promise<any> {
     this.logger.log(`Finding organizer for user ID: ${userId}`);
     
@@ -626,7 +623,7 @@ export class AnalyticsController {
         return null;
       }
       
-      this.logger.log(`Found organizer: ${organizer._id}`);
+      this.logger.log(`Found organizer: ${organizer._id} with user ID: ${organizer.user}`);
       return organizer;
     } catch (error) {
       this.logger.error(`Error finding organizer for user ${userId}: ${error.message}`);
