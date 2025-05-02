@@ -1,3 +1,6 @@
+import { Document } from 'mongoose';
+import { Stand } from '../entities/stand.entity';
+
 // src/stand/stand.interface.ts
 export interface StandResponse {
   id: string;

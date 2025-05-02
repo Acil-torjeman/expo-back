@@ -11,6 +11,8 @@ import { Invoice, InvoiceSchema } from '../invoice/entities/invoice.entity';
 import { Organizer, OrganizerSchema } from '../organizer/entities/organizer.entity';
 import { OrganizerModule } from '../organizer/organizer.module';
 import { UserModule } from '../user/user.module';
+import { EventModule } from '../event/event.module';
+import { StandModule } from '../stand/stand.module';
 
 @Module({
   imports: [
@@ -22,9 +24,10 @@ import { UserModule } from '../user/user.module';
       { name: Invoice.name, schema: InvoiceSchema },
       { name: Organizer.name, schema: OrganizerSchema },
     ]),
-    forwardRef(() => OrganizerModule), 
+    forwardRef(() => OrganizerModule),
+    forwardRef(() => EventModule),
+    forwardRef(() => StandModule),
     UserModule,
-    
   ],
   
   controllers: [AnalyticsController],
