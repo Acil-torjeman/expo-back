@@ -10,19 +10,25 @@ import {
     HttpStatus, 
     HttpCode,
     NotFoundException,
-    BadRequestException 
+    BadRequestException,
+    Inject, 
+    forwardRef
   } from '@nestjs/common';
   import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
   import { RolesGuard } from '../auth/guards/roles.guard';
   import { Roles } from '../auth/decorators/roles.decorator';
   import { UserRole } from '../user/entities/user.entity';
   import { AnalyticsService } from './analytics.service';
+  import { OrganizerService } from '../organizer/organizer.service';
   
   @Controller('analytics')
   export class AnalyticsController {
     private readonly logger = new Logger(AnalyticsController.name);
   
-    constructor(private readonly analyticsService: AnalyticsService) {}
+    constructor(
+      private readonly analyticsService: AnalyticsService,
+      @Inject(forwardRef(() => OrganizerService)) private readonly organizerService: OrganizerService
+    ) {}
   
     @Get('dashboard')
     @UseGuards(JwtAuthGuard, RolesGuard)
@@ -82,11 +88,25 @@ import {
   
     /**
      * Helper method to get organizer from user ID
-     * Note: In your real implementation, this would be handled by your OrganizerService
+     * Uses the OrganizerService to fetch the organizer
      */
     private async getOrganizerByUserId(userId: string): Promise<any> {
-      // This would call your actual organizer service
-      // For now, it's a placeholder - replace with actual implementation
-      return { _id: 'placeholder-organizer-id' };
+      this.logger.log(`Finding organizer for user ID: ${userId}`);
+      
+      try {
+        // Use the organizerService to find the organizer by userId
+        const organizer = await this.organizerService.findByUserId(userId);
+        
+        if (!organizer) {
+          this.logger.warn(`No organizer found for user ID: ${userId}`);
+          return null;
+        }
+        
+        this.logger.log(`Found organizer: ${organizer._id}`);
+        return organizer;
+      } catch (error) {
+        this.logger.error(`Error finding organizer for user ${userId}: ${error.message}`);
+        throw error;
+      }
     }
   }

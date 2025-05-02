@@ -277,7 +277,7 @@ export class AnalyticsService {
    * Calculate percentage of stands reserved X days before event
    */
   private async calculateStandsReservedBeforeEvent(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<any> {
-    const daysBeforeEvent = 30; // Default - can be made configurable
+    const daysBeforeEvent = 10; // Default - can be made configurable
     
     const events = await this.eventModel.find({
       _id: { $in: eventIds },

@@ -23,6 +23,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TasksModule } from './tasks/tasks.module';
 import { SeedModule } from './seed/seed-module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -55,7 +56,8 @@ import { SeedModule } from './seed/seed-module';
     DashboardModule,
     UploadModule,
     TasksModule,
-    SeedModule, 
+    SeedModule,
+    AnalyticsModule 
   ],
   controllers: [AppController],
   providers: [AppService],

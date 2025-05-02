@@ -1,5 +1,5 @@
 // src/analytics/analytics.module.ts
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
@@ -22,9 +22,11 @@ import { UserModule } from '../user/user.module';
       { name: Invoice.name, schema: InvoiceSchema },
       { name: Organizer.name, schema: OrganizerSchema },
     ]),
-    OrganizerModule,
+    forwardRef(() => OrganizerModule), 
     UserModule,
+    
   ],
+  
   controllers: [AnalyticsController],
   providers: [AnalyticsService],
   exports: [AnalyticsService],
