@@ -15,23 +15,21 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
   
-  // Configure static file serving for various upload directories
   app.use('/uploads/equipment-images', express.static(join(process.cwd(), 'uploads/equipment-images')));
   app.use('/uploads/plans', express.static(join(process.cwd(), 'uploads/plans')));
   app.use('/uploads/events', express.static(join(process.cwd(), 'uploads/events')));
   app.use('/uploads/organization-logos', express.static(join(process.cwd(), 'uploads/organization-logos')));
-  
+  app.use('/uploads/profile-images', express.static(join(process.cwd(), 'uploads/profile-images')));
   logger.log(`Static file directories configured`);
   
-  // Enable CORS for frontend communication
   app.enableCors({
-    origin: process.env.FRONTEND_URL,
+    origin: process.env.FRONTEND_URL || 'http://localhost:5174',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
     allowedHeaders: 'Content-Type,Authorization,Accept',
   });
   
-  logger.log(`CORS configured for origin: ${process.env.FRONTEND_URL}`);
+  logger.log(`CORS configured for origin: ${process.env.FRONTEND_URL}`)
   
   // Global validation settings - IMPORTANT: Allow unknown properties
   app.useGlobalPipes(new ValidationPipe({
