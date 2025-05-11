@@ -9,6 +9,7 @@ import { Stand, StandStatus } from '../stand/entities/stand.entity';
 import { Invoice, InvoiceStatus } from '../invoice/entities/invoice.entity';
 import { Organizer } from '../organizer/entities/organizer.entity';
 import { User } from '../user/entities/user.entity';
+import { Plan } from '../plan/entities/plan.entity';
 
 @Injectable()
 export class AnalyticsService {
@@ -22,6 +23,7 @@ export class AnalyticsService {
     @InjectModel(Invoice.name) private invoiceModel: Model<Invoice>,
     @InjectModel(Organizer.name) private organizerModel: Model<Organizer>,
     @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(Plan.name) private planModel: Model<Plan>,
   ) {}
 
   /**
@@ -37,19 +39,17 @@ export class AnalyticsService {
         throw new NotFoundException(`Organizer with ID ${organizerId} not found`);
       }
 
-      // Get the user ID associated with this organizer - this is the key fix
+      // Get the user ID associated with this organizer
       const userId = organizer.user;
       this.logger.log(`Found organizer's user ID: ${userId}`);
       
       // Set date range for analytics
-      const { startDate, endDate } = this.getDateRange(period);
+      const { startDate, endDate, previousStartDate, previousEndDate } = this.getDateRanges(period);
       
-      // Query for events by this organizer's user ID - this is the key fix
+      // Query for events by this organizer's user ID
       const eventsQuery: any = { 
         organizer: userId
       };
-      
-      this.logger.log(`Events query using user ID: ${JSON.stringify(eventsQuery)}`);
       
       // If specific event requested, add to query
       if (eventId) {
@@ -80,7 +80,9 @@ export class AnalyticsService {
         organizerId,
         eventIds.map((id: Types.ObjectId) => new Types.ObjectId(id.toString())),
         startDate, 
-        endDate
+        endDate,
+        previousStartDate,
+        previousEndDate
       );
       
       // Generate time series data for charts
@@ -90,7 +92,6 @@ export class AnalyticsService {
         endDate
       );
       
-      // No longer checking for hasNonZeroValues to switch to demo data
       return {
         period: { startDate, endDate },
         kpis,
@@ -137,7 +138,14 @@ export class AnalyticsService {
   /**
    * Calculate all KPIs for the dashboard
    */
-  private async calculateAllKpis(organizerId: string, eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<any> {
+  private async calculateAllKpis(
+    _organizerId: string, 
+    eventIds: Types.ObjectId[], 
+    startDate: Date, 
+    endDate: Date,
+    previousStartDate: Date,
+    previousEndDate: Date
+  ): Promise<any> {
     if (!eventIds || eventIds.length === 0) {
       return this.getEmptyKpiResponse();
     }
@@ -146,18 +154,14 @@ export class AnalyticsService {
       // Log the event IDs we're using for calculations
       this.logger.log(`Calculating KPIs for events: ${eventIds.map(id => id.toString())}`);
       
-      // Important: Check if there are any registrations at all for these events
+      // Check if there are any registrations for these events
       const registrationsCount = await this.registrationModel.countDocuments({
         event: { $in: eventIds }
       }).exec();
       
       this.logger.log(`Found ${registrationsCount} total registrations for these events`);
       
-      if (registrationsCount === 0) {
-        this.logger.log('No registrations found, returning empty KPI response');
-        return this.getEmptyKpiResponse();
-      }
-      
+      // Calculate current period KPIs
       const [
         processingTime,
         paymentTime,
@@ -173,6 +177,31 @@ export class AnalyticsService {
         this.calculatePendingRequests(eventIds, startDate, endDate),
         this.calculateStandsOccupation(eventIds, startDate, endDate)
       ]);
+      
+      // Calculate previous period KPIs for trends
+      const [
+        previousProcessingTime,
+        previousPaymentTime,
+        previousValidatedBeforeDeadline,
+        previousStandsBeforeEvent,
+        previousPendingRequests,
+        previousStandsOccupation
+      ] = await Promise.all([
+        this.calculateAverageProcessingTime(eventIds, previousStartDate, previousEndDate),
+        this.calculateAveragePaymentTime(eventIds, previousStartDate, previousEndDate),
+        this.calculateValidatedBeforeDeadline(eventIds, previousStartDate, previousEndDate),
+        this.calculateStandsReservedBeforeEvent(eventIds, previousStartDate, previousEndDate),
+        this.calculatePendingRequests(eventIds, previousStartDate, previousEndDate),
+        this.calculateStandsOccupation(eventIds, previousStartDate, previousEndDate)
+      ]);
+      
+      // Calculate trends
+      processingTime.trend = this.calculateTrend(processingTime.value, previousProcessingTime.value, true);
+      paymentTime.trend = this.calculateTrend(paymentTime.value, previousPaymentTime.value, true);
+      validatedBeforeDeadline.trend = this.calculateTrend(validatedBeforeDeadline.value, previousValidatedBeforeDeadline.value);
+      standsBeforeEvent.trend = this.calculateTrend(standsBeforeEvent.value, previousStandsBeforeEvent.value);
+      pendingRequests.trend = this.calculateTrend(pendingRequests.value, previousPendingRequests.value, true);
+      standsOccupation.trend = this.calculateTrend(standsOccupation.occupancyRate, previousStandsOccupation.occupancyRate);
       
       // For manual reminders - this would need to be tracked in the system
       const manualReminders = {
@@ -196,20 +225,43 @@ export class AnalyticsService {
   }
 
   /**
+   * Calculate trend percentage between current and previous values
+   * @param currentValue Current period value
+   * @param previousValue Previous period value
+   * @param inversed Set to true if lower values are better (like processing time)
+   * @returns Trend percentage
+   */
+  private calculateTrend(currentValue: number, previousValue: number, inversed: boolean = false): number {
+    if (previousValue === 0) {
+      return currentValue > 0 ? (inversed ? -100 : 100) : 0;
+    }
+    
+    const trend = ((currentValue - previousValue) / previousValue) * 100;
+    
+    // If inversed, multiply by -1 (e.g., for processing time, lower is better)
+    return inversed ? -trend : trend;
+  }
+
+  /**
    * Calculate average processing time for registrations (hours)
    */
-  private async calculateAverageProcessingTime(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<any> {
+  private async calculateAverageProcessingTime(
+    eventIds: Types.ObjectId[], 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<any> {
     try {
-      // Remove date restriction that might filter out all data
+      // Find registrations that were processed within the date range
       const registrations = await this.registrationModel.find({
         event: { $in: eventIds },
         $or: [
           { status: RegistrationStatus.APPROVED },
           { status: RegistrationStatus.REJECTED }
-        ]
+        ],
+        createdAt: { $gte: startDate, $lte: endDate }
       }).exec();
       
-      this.logger.log(`Found ${registrations.length} processed registrations`);
+      this.logger.log(`Found ${registrations.length} processed registrations in date range`);
       
       if (registrations.length === 0) {
         return {
@@ -243,12 +295,9 @@ export class AnalyticsService {
       
       const average = validCount > 0 ? totalHours / validCount : 0;
       
-      // Calculate trend compared to previous period
-      const trend = 0;
-      
       return {
         value: parseFloat(average.toFixed(2)),
-        trend,
+        trend: 0, // Will be calculated later
         unit: 'hours'
       };
     } catch (error) {
@@ -260,15 +309,20 @@ export class AnalyticsService {
   /**
    * Calculate average time between registration approval and payment (hours)
    */
-  private async calculateAveragePaymentTime(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<any> {
+  private async calculateAveragePaymentTime(
+    eventIds: Types.ObjectId[], 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<any> {
     try {
-      // Find all completed registrations for these events
+      // Find completed registrations within the date range
       const registrations = await this.registrationModel.find({
         event: { $in: eventIds },
-        status: RegistrationStatus.COMPLETED
+        status: RegistrationStatus.COMPLETED,
+        createdAt: { $gte: startDate, $lte: endDate }
       }).exec();
       
-      this.logger.log(`Found ${registrations.length} completed registrations`);
+      this.logger.log(`Found ${registrations.length} completed registrations in date range`);
       
       if (registrations.length === 0) {
         return {
@@ -286,7 +340,8 @@ export class AnalyticsService {
         
         const invoice = await this.invoiceModel.findOne({
           registration: reg._id,
-          status: InvoiceStatus.PAID
+          status: InvoiceStatus.PAID,
+          createdAt: { $gte: startDate, $lte: endDate }
         }).exec();
         
         if (!invoice) continue;
@@ -301,14 +356,13 @@ export class AnalyticsService {
         validCount++;
       }
       
-      this.logger.log(`Found ${validCount} paid invoices with valid approval dates`);
+      this.logger.log(`Found ${validCount} paid invoices with valid approval dates in date range`);
       
       const average = validCount > 0 ? totalHours / validCount : 0;
-      const trend = 0;
       
       return {
         value: parseFloat(average.toFixed(2)),
-        trend,
+        trend: 0, // Will be calculated later
         unit: 'hours'
       };
     } catch (error) {
@@ -320,9 +374,13 @@ export class AnalyticsService {
   /**
    * Calculate percentage of exhibitors validated before deadline
    */
-  private async calculateValidatedBeforeDeadline(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<any> {
+  private async calculateValidatedBeforeDeadline(
+    eventIds: Types.ObjectId[], 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<any> {
     try {
-      // For this we need to get events and their registration deadlines
+      // Get events and their registration deadlines
       const events = await this.eventModel.find({
         _id: { $in: eventIds }
       }).exec();
@@ -343,10 +401,11 @@ export class AnalyticsService {
         
         const registrations = await this.registrationModel.find({
           event: event._id,
-          status: RegistrationStatus.APPROVED
+          status: RegistrationStatus.APPROVED,
+          approvalDate: { $gte: startDate, $lte: endDate }
         }).exec();
         
-        this.logger.log(`Event ${event._id}: ${registrations.length} approved registrations, deadline: ${deadline}`);
+        this.logger.log(`Event ${event._id}: ${registrations.length} approved registrations in date range, deadline: ${deadline}`);
         
         for (const reg of registrations) {
           totalValidated++;
@@ -358,11 +417,10 @@ export class AnalyticsService {
       }
       
       const percentage = totalValidated > 0 ? (validatedBeforeDeadline / totalValidated) * 100 : 0;
-      const trend = 0;
       
       return {
         value: parseFloat(percentage.toFixed(2)),
-        trend,
+        trend: 0, // Will be calculated later
         unit: 'percent'
       };
     } catch (error) {
@@ -374,7 +432,11 @@ export class AnalyticsService {
   /**
    * Calculate percentage of stands reserved X days before event
    */
-  private async calculateStandsReservedBeforeEvent(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<any> {
+  private async calculateStandsReservedBeforeEvent(
+    eventIds: Types.ObjectId[], 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<any> {
     try {
       const daysBeforeEvent = 30; // Default - can be made configurable
       
@@ -395,38 +457,56 @@ export class AnalyticsService {
       let reservedBeforeDeadline = 0;
       
       for (const event of events) {
-        // Get all stands for this event's plan
+        // Get the plan associated with this event
+        if (!event.plan) {
+          this.logger.warn(`Event ${event._id} has no associated plan`);
+          continue;
+        }
+        
+        const planId = typeof event.plan === 'object' && event.plan._id
+          ? new Types.ObjectId(event.plan._id.toString())
+          : new Types.ObjectId(event.plan.toString());
+          
+        // Get all stands for this plan
         const stands = await this.standModel.find({
-          event: event._id
+          plan: planId
         }).exec();
         
         totalStands += stands.length;
         
-        if (totalStands === 0) continue;
+        if (stands.length === 0) {
+          this.logger.warn(`No stands found for plan ${planId} of event ${event._id}`);
+          continue;
+        }
         
-        this.logger.log(`Event ${event._id}: Found ${stands.length} stands`);
+        this.logger.log(`Event ${event._id}: Found ${stands.length} stands for plan ${planId}`);
         
         // Calculate the date that's X days before the event
         const eventStartDate = new Date(event.startDate);
         const deadlineDate = new Date(eventStartDate);
         deadlineDate.setDate(deadlineDate.getDate() - daysBeforeEvent);
         
-        // Count stands that are already reserved
-        const reservedStands = stands.filter(stand => 
-          stand.status === StandStatus.RESERVED || stand.status === 'reserved'
-        );
+        // Count stands that are reserved
+        const reservedStands = stands.filter(stand => {
+          const isReserved = stand.status === StandStatus.RESERVED || stand.status === 'reserved';
+          const updatedAtDate = this.getDateProperty(stand, 'updatedAt');
+          
+          // If we can't determine the update date, just check the status
+          if (!updatedAtDate) return isReserved;
+          
+          return isReserved && updatedAtDate >= startDate && updatedAtDate <= endDate;
+        });
         
-        this.logger.log(`Event ${event._id}: ${reservedStands.length} stands are currently reserved`);
+        this.logger.log(`Event ${event._id}: ${reservedStands.length} stands reserved in date range`);
         
         reservedBeforeDeadline += reservedStands.length;
       }
       
       const percentage = totalStands > 0 ? (reservedBeforeDeadline / totalStands) * 100 : 0;
-      const trend = 0;
       
       return {
         value: parseFloat(percentage.toFixed(2)),
-        trend,
+        trend: 0, // Will be calculated later
         unit: 'percent',
         daysBeforeEvent
       };
@@ -439,22 +519,23 @@ export class AnalyticsService {
   /**
    * Calculate number of pending registration requests
    */
-  private async calculatePendingRequests(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<any> {
+  private async calculatePendingRequests(
+    eventIds: Types.ObjectId[], 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<any> {
     try {
-      // Remove date restriction
       const pendingCount = await this.registrationModel.countDocuments({
         event: { $in: eventIds },
-        status: RegistrationStatus.PENDING
+        status: RegistrationStatus.PENDING,
+        createdAt: { $gte: startDate, $lte: endDate }
       }).exec();
       
-      this.logger.log(`Found ${pendingCount} pending registrations for these events`);
-      
-      // For trend, would need previous period data
-      const trend = 0;
+      this.logger.log(`Found ${pendingCount} pending registrations in date range`);
       
       return {
         value: pendingCount,
-        trend,
+        trend: 0, // Will be calculated later
         unit: 'count'
       };
     } catch (error) {
@@ -466,7 +547,11 @@ export class AnalyticsService {
   /**
    * Calculate stands occupation (available vs occupied)
    */
-  private async calculateStandsOccupation(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<any> {
+  private async calculateStandsOccupation(
+    eventIds: Types.ObjectId[], 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<any> {
     try {
       const events = await this.eventModel.find({
         _id: { $in: eventIds }
@@ -487,12 +572,27 @@ export class AnalyticsService {
       let occupiedStands = 0;
       
       for (const event of events) {
-        // Get all stands for this event
+        // Get the plan associated with this event
+        if (!event.plan) {
+          this.logger.warn(`Event ${event._id} has no associated plan`);
+          continue;
+        }
+        
+        const planId = typeof event.plan === 'object' && event.plan._id
+          ? new Types.ObjectId(event.plan._id.toString())
+          : new Types.ObjectId(event.plan.toString());
+        
+        // Get all stands for this plan
         const stands = await this.standModel.find({
-          event: event._id
+          plan: planId
         }).exec();
         
         totalStands += stands.length;
+        
+        if (stands.length === 0) {
+          this.logger.warn(`No stands found for plan ${planId} of event ${event._id}`);
+          continue;
+        }
         
         // Log the stands statuses for debugging
         const statusCounts = {};
@@ -504,23 +604,28 @@ export class AnalyticsService {
         this.logger.log(`Event ${event._id}: Stands by status: ${JSON.stringify(statusCounts)}`);
         
         // Count occupied stands - any with status 'reserved' or 'occupied'
-        const occupied = stands.filter(stand => 
-          stand.status === 'reserved' || stand.status === 'occupied'
-        ).length;
+        const occupied = stands.filter(stand => {
+          const isOccupied = stand.status === 'reserved' || stand.status === 'occupied';
+          const updatedAtDate = this.getDateProperty(stand, 'updatedAt');
+          
+          // If we can't determine the update date, just check the status
+          if (!updatedAtDate) return isOccupied;
+          
+          return isOccupied && updatedAtDate >= startDate && updatedAtDate <= endDate;
+        }).length;
         
         occupiedStands += occupied;
       }
       
       const availableStands = totalStands - occupiedStands;
       const occupancyRate = totalStands > 0 ? (occupiedStands / totalStands) * 100 : 0;
-      const trend = 0;
       
       return {
         available: availableStands,
         occupied: occupiedStands,
         total: totalStands,
         occupancyRate: parseFloat(occupancyRate.toFixed(2)),
-        trend,
+        trend: 0, // Will be calculated later
         unit: 'percent'
       };
     } catch (error) {
@@ -551,20 +656,22 @@ export class AnalyticsService {
       const standsOccupationData: any[] = [];
       
       for (const date of datePoints) {
+        const currentEndDate = new Date(date);
+        
         // For processing time
-        const processingTime = await this.getProcessingTimeForDate(eventIds, new Date(date));
+        const processingTime = await this.getProcessingTimeForDate(eventIds, startDate, currentEndDate);
         processingTimeData.push(processingTime);
         
         // For payment time
-        const paymentTime = await this.getPaymentTimeForDate(eventIds, new Date(date));
+        const paymentTime = await this.getPaymentTimeForDate(eventIds, startDate, currentEndDate);
         paymentTimeData.push(paymentTime);
         
         // For pending requests
-        const pendingRequests = await this.getPendingRequestsForDate(eventIds, new Date(date));
+        const pendingRequests = await this.getPendingRequestsForDate(eventIds, startDate, currentEndDate);
         pendingRequestsData.push(pendingRequests);
         
         // For stands occupation
-        const standsOccupation = await this.getStandsOccupationForDate(eventIds, new Date(date));
+        const standsOccupation = await this.getStandsOccupationForDate(eventIds, startDate, currentEndDate);
         standsOccupationData.push(standsOccupation);
       }
       
@@ -605,149 +712,62 @@ export class AnalyticsService {
   }
   
   /**
-   * Get processing time for a specific date
+   * Get processing time for a specific date range
    */
-  private async getProcessingTimeForDate(eventIds: Types.ObjectId[], date: Date): Promise<number> {
+  private async getProcessingTimeForDate(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<number> {
     try {
-      // Simplify by only checking registrations that were processed
-      const registrations = await this.registrationModel.find({
-        event: { $in: eventIds },
-        $or: [
-          { status: RegistrationStatus.APPROVED },
-          { status: RegistrationStatus.REJECTED }
-        ]
-      }).exec();
-      
-      if (registrations.length === 0) {
-        return 0;
-      }
-      
-      let totalHours = 0;
-      let validCount = 0;
-      
-      for (const reg of registrations) {
-        let processDate;
-        
-        if (reg.status === RegistrationStatus.APPROVED && reg.approvalDate) {
-          processDate = new Date(reg.approvalDate);
-        } else if (reg.status === RegistrationStatus.REJECTED && reg.rejectionDate) {
-          processDate = new Date(reg.rejectionDate);
-        } else {
-          continue;
-        }
-        
-        const createdDate = new Date(reg.createdAt);
-        const diffTime = Math.abs(processDate.getTime() - createdDate.getTime());
-        const diffHours = diffTime / (1000 * 60 * 60);
-        
-        totalHours += diffHours;
-        validCount++;
-      }
-      
-      return validCount > 0 ? parseFloat((totalHours / validCount).toFixed(2)) : 0;
+      const result = await this.calculateAverageProcessingTime(eventIds, startDate, endDate);
+      return result.value;
     } catch (error) {
-      this.logger.error(`Error getting processing time for date ${date}: ${error.message}`);
+      this.logger.error(`Error getting processing time for date range ${startDate} - ${endDate}: ${error.message}`);
       return 0;
     }
   }
   
   /**
-   * Get payment time for a specific date
+   * Get payment time for a specific date range
    */
-  private async getPaymentTimeForDate(eventIds: Types.ObjectId[], date: Date): Promise<number> {
+  private async getPaymentTimeForDate(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<number> {
     try {
-      // Simplify by directly querying invoices
-      const invoices = await this.invoiceModel.find({
-        status: InvoiceStatus.PAID
-      }).populate('registration').exec();
-      
-      if (invoices.length === 0) {
-        return 0;
-      }
-      
-      let totalHours = 0;
-      let validCount = 0;
-      
-      for (const invoice of invoices) {
-        const registration = invoice.registration;
-        if (!registration || !registration.approvalDate) continue;
-        
-        // Safe handling of registration.event type
-        let eventId: Types.ObjectId | null = null;
-        if (typeof registration.event === 'object' && registration.event?._id) {
-          eventId = new Types.ObjectId(registration.event._id.toString());
-        } else if (registration.event) {
-          eventId = new Types.ObjectId(registration.event.toString());
-        }
-        
-        if (!eventId || !eventIds.some(id => id.equals(eventId))) continue;
-        
-        const approvalDate = new Date(registration.approvalDate);
-        const paidDate = invoice.updatedAt;
-        
-        const diffTime = Math.abs(paidDate.getTime() - approvalDate.getTime());
-        const diffHours = diffTime / (1000 * 60 * 60);
-        
-        totalHours += diffHours;
-        validCount++;
-      }
-      
-      return validCount > 0 ? parseFloat((totalHours / validCount).toFixed(2)) : 0;
+      const result = await this.calculateAveragePaymentTime(eventIds, startDate, endDate);
+      return result.value;
     } catch (error) {
-      this.logger.error(`Error getting payment time for date ${date}: ${error.message}`);
+      this.logger.error(`Error getting payment time for date range ${startDate} - ${endDate}: ${error.message}`);
       return 0;
     }
   }
   
   /**
-   * Get pending requests for a specific date
+   * Get pending requests for a specific date range
    */
-  private async getPendingRequestsForDate(eventIds: Types.ObjectId[], date: Date): Promise<number> {
+  private async getPendingRequestsForDate(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<number> {
     try {
-      // Simplify to just get all pending requests
-      return await this.registrationModel.countDocuments({
-        event: { $in: eventIds },
-        status: RegistrationStatus.PENDING
-      }).exec();
+      const result = await this.calculatePendingRequests(eventIds, startDate, endDate);
+      return result.value;
     } catch (error) {
-      this.logger.error(`Error getting pending requests for date ${date}: ${error.message}`);
+      this.logger.error(`Error getting pending requests for date range ${startDate} - ${endDate}: ${error.message}`);
       return 0;
     }
   }
   
   /**
-   * Get stands occupation for a specific date
+   * Get stands occupation for a specific date range
    */
-  private async getStandsOccupationForDate(eventIds: Types.ObjectId[], date: Date): Promise<any> {
+  private async getStandsOccupationForDate(eventIds: Types.ObjectId[], startDate: Date, endDate: Date): Promise<any> {
     try {
-      let total = 0;
-      let occupied = 0;
-      
-      for (const eventId of eventIds) {
-        const stands = await this.standModel.find({
-          event: eventId
-        }).exec();
-        
-        total += stands.length;
-        occupied += stands.filter(s => 
-          s.status === 'reserved' || s.status === 'occupied'
-        ).length;
-      }
-      
-      const available = total - occupied;
-      const rate = total > 0 ? parseFloat(((occupied / total) * 100).toFixed(2)) : 0;
+      const result = await this.calculateStandsOccupation(eventIds, startDate, endDate);
       
       return {
-        date: this.formatDateString(date),
-        available,
-        occupied,
-        total,
-        rate
+        date: this.formatDateString(endDate),
+        available: result.available,
+        occupied: result.occupied,
+        total: result.total,
+        rate: result.occupancyRate
       };
     } catch (error) {
-      this.logger.error(`Error getting stands occupation for date ${date}: ${error.message}`);
+      this.logger.error(`Error getting stands occupation for date range ${startDate} - ${endDate}: ${error.message}`);
       return {
-        date: this.formatDateString(date),
+        date: this.formatDateString(endDate),
         available: 0,
         occupied: 0,
         total: 0,
@@ -757,31 +777,49 @@ export class AnalyticsService {
   }
 
   /**
-   * Get date range based on period string
+   * Get date ranges for current and previous periods based on period string
    */
-  private getDateRange(period?: string): { startDate: Date, endDate: Date } {
+  private getDateRanges(period?: string): { 
+    startDate: Date, 
+    endDate: Date,
+    previousStartDate: Date,
+    previousEndDate: Date  
+  } {
     const endDate = new Date();
     let startDate = new Date();
+    let durationInDays: number;
     
     switch (period) {
       case 'week':
         startDate.setDate(startDate.getDate() - 7);
+        durationInDays = 7;
         break;
       case 'month':
         startDate.setMonth(startDate.getMonth() - 1);
+        durationInDays = 30;
         break;
       case 'quarter':
         startDate.setMonth(startDate.getMonth() - 3);
+        durationInDays = 90;
         break;
       case 'year':
         startDate.setFullYear(startDate.getFullYear() - 1);
+        durationInDays = 365;
         break;
       default:
         // Default to last 30 days
         startDate.setDate(startDate.getDate() - 30);
+        durationInDays = 30;
     }
     
-    return { startDate, endDate };
+    // Calculate previous period dates (same duration, immediately before current period)
+    const previousEndDate = new Date(startDate);
+    previousEndDate.setDate(previousEndDate.getDate() - 1);
+    
+    const previousStartDate = new Date(previousEndDate);
+    previousStartDate.setDate(previousStartDate.getDate() - durationInDays);
+    
+    return { startDate, endDate, previousStartDate, previousEndDate };
   }
 
   /**
@@ -804,5 +842,21 @@ export class AnalyticsService {
         unit: 'percent'
       }
     };
+  }
+  
+  /**
+   * Check if a date property exists on an object
+   * Helper method to safely work with Mongoose timestamps
+   */
+  private getDateProperty(obj: any, propertyName: string): Date | null {
+    if (obj && obj[propertyName] && obj[propertyName] instanceof Date) {
+      return obj[propertyName];
+    }
+    
+    if (obj && obj[propertyName] && typeof obj[propertyName] === 'string') {
+      return new Date(obj[propertyName]);
+    }
+    
+    return null;
   }
 }

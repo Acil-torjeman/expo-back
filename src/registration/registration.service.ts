@@ -784,8 +784,6 @@ async cancel(id: string, exhibitorId: string): Promise<Registration> {
     throw new BadRequestException('Cannot cancel registration within 10 days of event start');
   }
   
-  // Verify exhibitor owns this registration - same pattern as before
-  // [ownership verification code remains the same]
   
   // IMPORTANT: Free up any reserved stands
   if (registration.stands && registration.stands.length > 0) {

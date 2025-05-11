@@ -25,13 +25,13 @@ async function bootstrap() {
   
   // Enable CORS for frontend communication
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5174',
+    origin: process.env.FRONTEND_URL,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
     allowedHeaders: 'Content-Type,Authorization,Accept',
   });
   
-  logger.log(`CORS configured for origin: ${process.env.FRONTEND_URL || 'http://localhost:5174'}`);
+  logger.log(`CORS configured for origin: ${process.env.FRONTEND_URL}`);
   
   // Global validation settings - IMPORTANT: Allow unknown properties
   app.useGlobalPipes(new ValidationPipe({
@@ -39,7 +39,7 @@ async function bootstrap() {
     transform: true,            // Transform payloads to be objects typed according to their DTO classes
     forbidNonWhitelisted: false, // Do not throw errors for unknown properties
     transformOptions: {
-      enableImplicitConversion: true, // Convert primitive types automatically
+      enableImplicitConversion: true, 
     }
   }));
   
