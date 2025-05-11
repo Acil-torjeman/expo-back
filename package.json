@@ -20,8 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
-    "@css-inline/css-inline-win32-x64-msvc": "^0.14.3",
-    "@nestjs-modules/mailer": "^2.0.2",
+    "@nestjs-modules/mailer": "^1.7.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.1",
     "@nestjs/core": "^11.0.1",

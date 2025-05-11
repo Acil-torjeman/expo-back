@@ -1,10 +1,9 @@
-// src/auth/auth.module.ts
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MailerModule } from '@nestjs-modules/mailer';
-import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
+import { PugAdapter } from '@nestjs-modules/mailer/dist/adapters/pug.adapter';  // Importation de l'adaptateur Pug
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AccessTokenStrategy } from './strategies/access-token.strategy';
@@ -15,26 +14,26 @@ import { User, UserSchema } from '../user/entities/user.entity';
 import { ExhibitorModule } from '../exhibitor/exhibitor.module';
 import { OrganizerModule } from '../organizer/organizer.module';
 import { RegistrationModule } from 'src/registration/registration.module';
-import { PugAdapter } from '@nestjs-modules/mailer/dist/adapters/pug.adapter';
 
 @Module({
   imports: [
-    // Use Passport Module with default JWT strategy
+    // Utilisation du module Passport avec la stratégie JWT par défaut
     PassportModule.register({ defaultStrategy: 'jwt' }),
 
-    // Include User module for authentication with forwardRef to avoid circular dependency
+    // Inclusion du module User pour l'authentification avec forwardRef pour éviter les dépendances circulaires
     forwardRef(() => UserModule),
     
-    // Include Exhibitor and Organizer modules for signup with forwardRef to avoid circular dependency
+    // Inclusion des modules Exhibitor et Organizer pour l'inscription
     forwardRef(() => ExhibitorModule),
     forwardRef(() => OrganizerModule),
     forwardRef(() => RegistrationModule),
-    // Include User model for direct operations
+    
+    // Inclusion du modèle User pour des opérations directes
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
     ]),
 
-    // JWT Configuration
+    // Configuration JWT
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -46,7 +45,7 @@ import { PugAdapter } from '@nestjs-modules/mailer/dist/adapters/pug.adapter';
       }),
     }),
     
-    //Mailer Configuration
+    // Configuration de Mailer
     MailerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -63,9 +62,10 @@ import { PugAdapter } from '@nestjs-modules/mailer/dist/adapters/pug.adapter';
         defaults: {
           from: `"ExpoManagement" <${configService.get('MAIL_FROM', 'noreply@myexpo.com')}>`,
         },
+        
         template: {
           dir: process.cwd() + '/templates/',
-          adapter: new HandlebarsAdapter(),
+          adapter: new PugAdapter(),  // Changement de HandlebarsAdapter à PugAdapter
           options: {
             strict: true,
           },

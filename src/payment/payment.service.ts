@@ -27,7 +27,7 @@ export class PaymentService {
         throw new Error('Stripe secret key is required');
       }
       this.stripe = new Stripe(stripeSecretKey, {
-        apiVersion: '2025-03-31.basil',
+        apiVersion: '2025-04-30.basil',
       });
       this.logger.log('Stripe initialized successfully');
     } catch (error) {
