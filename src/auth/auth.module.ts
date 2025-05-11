@@ -1,9 +1,10 @@
+// src/auth/auth.module.ts
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MailerModule } from '@nestjs-modules/mailer';
-import { PugAdapter } from '@nestjs-modules/mailer/dist/adapters/pug.adapter';  // Importation de l'adaptateur Pug
+import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AccessTokenStrategy } from './strategies/access-token.strategy';
@@ -14,26 +15,26 @@ import { User, UserSchema } from '../user/entities/user.entity';
 import { ExhibitorModule } from '../exhibitor/exhibitor.module';
 import { OrganizerModule } from '../organizer/organizer.module';
 import { RegistrationModule } from 'src/registration/registration.module';
+import { PugAdapter } from '@nestjs-modules/mailer/dist/adapters/pug.adapter';
 
 @Module({
   imports: [
-    // Utilisation du module Passport avec la stratégie JWT par défaut
+    // Use Passport Module with default JWT strategy
     PassportModule.register({ defaultStrategy: 'jwt' }),
 
-    // Inclusion du module User pour l'authentification avec forwardRef pour éviter les dépendances circulaires
+    // Include User module for authentication with forwardRef to avoid circular dependency
     forwardRef(() => UserModule),
     
-    // Inclusion des modules Exhibitor et Organizer pour l'inscription
+    // Include Exhibitor and Organizer modules for signup with forwardRef to avoid circular dependency
     forwardRef(() => ExhibitorModule),
     forwardRef(() => OrganizerModule),
     forwardRef(() => RegistrationModule),
-    
-    // Inclusion du modèle User pour des opérations directes
+    // Include User model for direct operations
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
     ]),
 
-    // Configuration JWT
+    // JWT Configuration
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -45,7 +46,7 @@ import { RegistrationModule } from 'src/registration/registration.module';
       }),
     }),
     
-    // Configuration de Mailer
+    //Mailer Configuration
     MailerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -65,7 +66,9 @@ import { RegistrationModule } from 'src/registration/registration.module';
         
         template: {
           dir: process.cwd() + '/templates/',
-          adapter: new PugAdapter(),  // Changement de HandlebarsAdapter à PugAdapter
+          adapter: new HandlebarsAdapter(undefined, {
+            inlineCssEnabled: false
+          }),
           options: {
             strict: true,
           },
