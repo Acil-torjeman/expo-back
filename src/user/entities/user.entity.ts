@@ -25,11 +25,10 @@ export enum UserStatus {
 /**
  * Schéma de l'entité Utilisateur
  */
-@Schema({ timestamps: true }) // Ajoute automatiquement createdAt et updatedAt
+@Schema({ timestamps: true }) 
 export class User extends Document {
   @Prop({ 
     required: true,
-    // Ajoute un index et transforme en minuscules pour une recherche insensible à la casse
     index: true,
    
   })
