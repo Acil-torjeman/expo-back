@@ -754,65 +754,154 @@ async complete(id: string, exhibitorId: string): Promise<Registration> {
     
     return updatedRegistration;
   }
+// src/registration/registration.service.ts
 
-  /**
+/**
  * Cancel a registration
+ * @param id Registration ID
+ * @param userId User ID
+ * @param role User role
+ * @param reason Cancellation reason (optional)
  */
-async cancel(id: string, exhibitorId: string): Promise<Registration> {
-  this.logger.log(`Cancelling registration ${id}`);
+async cancel(
+  id: string, 
+  userId: string,
+  role: UserRole,
+  reason?: string
+): Promise<Registration> {
+  this.logger.log(`Cancelling registration ${id} by ${role}`);
   
   // Find the registration
   const registration = await this.findOne(id);
   
+  if (!registration) {
+    throw new NotFoundException(`Registration with ID ${id} not found`);
+  }
+  
   if (registration.status === RegistrationStatus.CANCELLED) {
     throw new BadRequestException('Registration is already cancelled');
   }
-  
-  // Check if event is within 10 days
-  const eventId = typeof registration.event === 'object' && registration.event !== null && '_id' in registration.event && registration.event._id
+
+  // Extract event ID 
+  const eventId = typeof registration.event === 'object' && registration.event._id
     ? registration.event._id.toString()
     : registration.event.toString();
-  const event = await this.eventService.findOne(eventId);
   
-  // Check if event is within 10 days from now
-  const today = new Date();
-  const eventStartDate = new Date(event.startDate);
-  const diffTime = eventStartDate.getTime() - today.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  
-  if (diffDays <= 10) {
-    throw new BadRequestException('Cannot cancel registration within 10 days of event start');
+  // Permission checks based on role
+  if (role === UserRole.EXHIBITOR) {
+    try {
+      // Get the exhibitor for this user
+      const exhibitor = await this.exhibitorService.findByUserId(userId);
+      
+      // Check if this exhibitor owns the registration
+      let registrationExhibitorId: string = '';
+      
+      if (registration.exhibitor) {
+        if (typeof registration.exhibitor === 'object') {
+          registrationExhibitorId = (registration.exhibitor as any)._id.toString();
+        } else {
+          registrationExhibitorId = String(registration.exhibitor);
+        }
+      } else {
+        throw new NotFoundException('Registration has no associated exhibitor');
+      }
+      
+      const exhibitorId = (exhibitor as any)._id.toString();
+      
+      if (registrationExhibitorId !== exhibitorId) {
+        throw new ForbiddenException('You do not have permission to cancel this registration');
+      }
+      
+      // Check time constraint for exhibitors only
+      const event = await this.eventService.findOne(eventId);
+      
+      const today = new Date();
+      const eventStartDate = new Date(event.startDate);
+      const diffTime = eventStartDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays <= 10) {
+        throw new BadRequestException('Cannot cancel registration within 10 days of event start');
+      }
+    } catch (error) {
+      this.logger.error(`Error verifying exhibitor permissions: ${error.message}`);
+      throw error instanceof ForbiddenException ? error : new ForbiddenException('You do not have permission to cancel this registration');
+    }
+  } else if (role === UserRole.ORGANIZER) {
+    try {
+      // Use the event service to check if the user is authorized for this event
+      const event = await this.eventService.findOne(eventId);
+      
+      // Simplified check - this should match how your system tracks event ownership
+      // Most NestJS apps would store the userId directly in the event
+      let isAuthorized = false;
+      
+      // Access the organizer field with type assertion
+      const organizer = (event as any).organizer;
+      
+      if (organizer) {
+        if (typeof organizer === 'object') {
+          // Either organizer is the direct user ID, or it has a user property
+          if (organizer._id && organizer._id.toString() === userId) {
+            isAuthorized = true;
+          }
+        } else if (organizer.toString() === userId) {
+          isAuthorized = true;
+        }
+      }
+      
+      // If we can't determine authorization, try a direct check with the event service if available
+      if (!isAuthorized && typeof this.eventService.isOwnedByUser === 'function') {
+        isAuthorized = await this.eventService.isOwnedByUser(eventId, userId);
+      }
+      
+      if (!isAuthorized) {
+        throw new ForbiddenException('You do not have permission to cancel this registration');
+      }
+    } catch (error) {
+      this.logger.error(`Error verifying organizer permissions: ${error.message}`);
+      throw error instanceof ForbiddenException ? error : new ForbiddenException('You do not have permission to cancel this registration');
+    }
   }
+  // For ADMIN role, no additional checks needed
   
-  
-  // IMPORTANT: Free up any reserved stands
+  // Free up any reserved stands
   if (registration.stands && registration.stands.length > 0) {
     for (const stand of registration.stands) {
-      const standId = typeof stand === 'object' && stand._id
-        ? String(stand._id)
-        : String(stand);
+      const standId = typeof stand === 'object' && (stand as any)._id
+        ? (stand as any)._id.toString()
+        : stand.toString();
           
       try {
-        // This ensures stands return to available status
         await this.standService.freeStand(standId);
         this.logger.log(`Stand ${standId} freed and marked as available`);
       } catch (error) {
         this.logger.error(`Error freeing stand ${standId}: ${error.message}`);
-        // Continue with other stands even if one fails
       }
     }
   }
   
-  // Update the registration status to cancelled
+  // Create cancellation metadata
+  const metadata = {
+    ...(registration.metadata || {}),
+    cancellation: {
+      cancelledBy: role.toLowerCase(),
+      userId: userId,
+      reason: reason || `Cancelled by ${role.toLowerCase()}`,
+      date: new Date()
+    }
+  };
+  
+  // Update the registration
   const updatedRegistration = await this.registrationModel.findByIdAndUpdate(
     id,
     { 
       $set: { 
         status: RegistrationStatus.CANCELLED,
-        cancellationDate: new Date()
+        metadata: metadata,
+        cancellationDate: new Date(),
+        reviewedBy: new Types.ObjectId(userId)
       },
-      // Keep the stands and equipment arrays for record purposes
-      // but mark them as no longer selected
       $unset: { 
         standSelectionCompleted: "",
         equipmentSelectionCompleted: ""
@@ -826,7 +915,39 @@ async cancel(id: string, exhibitorId: string): Promise<Registration> {
   .exec();
   
   if (!updatedRegistration) {
-    throw new NotFoundException(`Registration with ID ${id} not found`);
+    throw new NotFoundException(`Registration with ID ${id} not found after update`);
+  }
+  
+  // Try to send notification email to the exhibitor
+  try {
+    if (this.mailService) {
+      // Extract exhibitor email with type assertions
+      let exhibitorEmail = null;
+      if (registration.exhibitor && typeof registration.exhibitor === 'object') {
+        const exhibitorObj = registration.exhibitor as any;
+        if (exhibitorObj.user && typeof exhibitorObj.user === 'object') {
+          exhibitorEmail = exhibitorObj.user.email;
+        }
+      }
+      
+      if (exhibitorEmail) {
+        const eventName = typeof registration.event === 'object' ? 
+                         (registration.event as any).name || 'the event' : 
+                         'the event';
+                         
+        this.mailService.sendRegistrationCancelled(
+          exhibitorEmail,
+          {
+            eventName,
+            exhibitorName: String(exhibitorEmail).split('@')[0],
+            cancelledBy: role === UserRole.EXHIBITOR ? 'you' : 'the organizer',
+            reason: reason || 'No reason provided'
+          }
+        );
+      }
+    }
+  } catch (error) {
+    this.logger.error(`Failed to send cancellation notification: ${error.message}`);
   }
   
   return updatedRegistration;

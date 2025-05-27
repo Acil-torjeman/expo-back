@@ -29,6 +29,9 @@ interface OrganizerSignupDto {
 
 @Injectable()
 export class OrganizerService {
+  getByUserId(id: any) {
+    throw new Error('Method not implemented.');
+  }
   private readonly logger = new Logger(OrganizerService.name);
 
   constructor(

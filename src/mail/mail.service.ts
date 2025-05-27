@@ -5,6 +5,9 @@ import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class MailService {
+  sendRegistrationCancelled(email: string, arg1: { eventName: string; exhibitorName: string; cancelledBy: string; reason: string; }) {
+    throw new Error('Method not implemented.');
+  }
   private transporter;
   private readonly logger = new Logger(MailService.name);
 

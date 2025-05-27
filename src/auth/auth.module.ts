@@ -61,7 +61,7 @@ import { PugAdapter } from '@nestjs-modules/mailer/dist/adapters/pug.adapter';
           },
         },
         defaults: {
-          from: `"ExpoManagement" <${configService.get('MAIL_FROM', 'noreply@myexpo.com')}>`,
+          from: `"MyExpo" <${configService.get('MAIL_FROM', 'noreply@myexpo.com')}>`,
         },
         
         template: {

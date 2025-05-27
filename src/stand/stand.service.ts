@@ -415,6 +415,20 @@ async freeStand(id: string): Promise<Stand> {
 }
 
   /**
+   * Remove all stands for a specific plan
+   */
+  async removeByPlan(planId: string): Promise<{ deletedCount: number }> {
+    this.logger.log(`Removing all stands for plan: ${planId}`);
+    
+    const result = await this.standModel.deleteMany({ 
+      plan: new Types.ObjectId(planId) 
+    });
+    
+    this.logger.log(`Deleted ${result.deletedCount} stands for plan ${planId}`);
+    return { deletedCount: result.deletedCount };
+  }
+
+  /**
    * Remove stand
    */
   async remove(id: string, userId: string): Promise<{ message: string }> {

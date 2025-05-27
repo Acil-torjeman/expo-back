@@ -278,9 +278,8 @@ export class AnalyticsController {
     }
   }
   
-  /**
-   * Debug endpoint to verify stands for organizer's events
-   */
+   //Debug endpoint to verify stands for organizer's events
+
   @Get('debug/stands')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ORGANIZER)

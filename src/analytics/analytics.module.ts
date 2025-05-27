@@ -27,12 +27,12 @@ import { PlanModule } from '../plan/plan.module';
       { name: Invoice.name, schema: InvoiceSchema },
       { name: Organizer.name, schema: OrganizerSchema },
       { name: User.name, schema: UserSchema },
-      { name: Plan.name, schema: PlanSchema },  // Importation correcte du modèle Plan
+      { name: Plan.name, schema: PlanSchema },  
     ]),
     forwardRef(() => OrganizerModule),
     forwardRef(() => EventModule),
     forwardRef(() => StandModule),
-    forwardRef(() => PlanModule),  // Importation correcte du module Plan avec forwardRef
+    forwardRef(() => PlanModule),  
     UserModule,
   ],
   controllers: [AnalyticsController],

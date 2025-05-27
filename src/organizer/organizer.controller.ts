@@ -61,17 +61,17 @@ export class OrganizerController {
               false
             );
           }
-          cb(null, true);
+          cb(null, true);  
         },
         limits: {
-          fileSize: 2 * 1024 * 1024, // 2MB file size limit for logos
+          fileSize: 2 * 1024 * 1024,  
         },
       }
     )
   )
   @HttpCode(HttpStatus.CREATED)
   async signup(
-    @Body() organizerSignupDto: any, // Utiliser le DTO approprié
+    @Body() organizerSignupDto: any, 
     @UploadedFiles()
     files: {
       organizationLogo?: MulterFile[];

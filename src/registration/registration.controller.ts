@@ -26,23 +26,26 @@ import { SelectEquipmentDto } from './dto/select-equipment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { UserRole } from '../user/entities/user.entity';
+import { User, UserRole } from '../user/entities/user.entity';
 import { IsPublic } from '../auth/decorators/public.decorator';
 import { ExhibitorService } from '../exhibitor/exhibitor.service';
 import { Registration } from './entities/registration.entity';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { OrganizerService } from '../organizer/organizer.service';
 import { Exhibitor } from '../exhibitor/entities/exhibitor.entity';
+import { Organizer } from '../organizer/entities/organizer.entity';
 
 @Controller('registrations')
 export class RegistrationController {
   private readonly logger = new Logger(RegistrationController.name);
 
-  constructor(
-    private readonly registrationService: RegistrationService,
-    private readonly exhibitorService: ExhibitorService,
-    @InjectModel(Registration.name) private readonly registrationModel: Model<Registration>,
-  ) {}
+ constructor(
+  private readonly registrationService: RegistrationService,
+  private readonly exhibitorService: ExhibitorService,
+  private readonly organizerService: OrganizerService, 
+  @InjectModel(Registration.name) private readonly registrationModel: Model<Registration>,
+) {}
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -315,29 +318,24 @@ export class RegistrationController {
       throw error;
     }
   }
-
-  @Post(':id/cancel')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.EXHIBITOR)
-  async cancel(@Param('id') id: string, @Req() req) {
-    this.logger.log(`Cancelling registration ${id}`);
-    
-    try {
-      // Get exhibitor ID from user ID
-      const exhibitor = await this.exhibitorService.findByUserId(req.user.id);
-      
-      if (!exhibitor) {
-        throw new NotFoundException('Exhibitor profile not found for this user');
-      }
-      
-      // Pass the exhibitor ID to the service
-      return await this.registrationService.cancel(id, (exhibitor._id as unknown as Types.ObjectId).toString());
-    } catch (error) {
-      this.logger.error(`Error cancelling registration: ${error.message}`);
-      throw error;
-    }
+@Post(':id/cancel')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.EXHIBITOR, UserRole.ORGANIZER, UserRole.ADMIN)
+async cancel(@Param('id') id: string, @Req() req) {
+  this.logger.log(`Cancelling registration ${id} by user with role ${req.user.role}`);
+  
+  try {
+    return await this.registrationService.cancel(
+      id, 
+      req.user.id,
+      req.user.role,
+      req.body?.reason
+    );
+  } catch (error) {
+    this.logger.error(`Error cancelling registration: ${error.message}`);
+    throw error;
   }
-
+}
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   async update(

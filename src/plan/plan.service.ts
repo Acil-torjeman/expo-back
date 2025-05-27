@@ -198,63 +198,59 @@ export class PlanService {
   /**
    * Remove plan
    */
-  async remove(id: string, userId: string): Promise<{ message: string }> {
-    this.logger.log(`Removing plan with ID: ${id} by user ${userId}`);
-    
-    const plan = await this.findOne(id);
-    
-    // Check if user has permission - extract organizer ID
-    const organizerId = typeof plan.organizer === 'object' && plan.organizer._id
-      ? plan.organizer._id.toString()
-      : typeof plan.organizer === 'string'
-        ? plan.organizer
-        : null;
-    
-    if (organizerId !== userId) {
-      this.logger.warn(`User ${userId} does not have permission to delete plan ${id}`);
-      throw new ForbiddenException('You do not have permission to delete this plan');
-    }
-    
-    // Check if plan is associated with any events
-    const events = await this.eventService.findAll();
-    const eventsUsingPlan = events.filter(event => {
-      if (!event.plan) return false;
-      
-      const eventPlanId = typeof event.plan === 'object' && event.plan._id
-        ? event.plan._id.toString()
-        : typeof event.plan === 'string'
-          ? event.plan
-          : null;
-          
-      return eventPlanId === id;
-    });
-    
-    if (eventsUsingPlan.length > 0) {
-      this.logger.warn(`Plan ${id} is associated with ${eventsUsingPlan.length} events and cannot be deleted`);
-      throw new BadRequestException(`Cannot delete a plan that is associated with events. Please dissociate it from all events first.`);
-    }
-    
-    // Check if plan has any stands
-    const stands = await this.standService.findByPlan(id);
-    if (stands && stands.length > 0) {
-      this.logger.warn(`Plan ${id} has stands and cannot be deleted`);
-      throw new BadRequestException('Cannot delete a plan that has stands. Please remove the stands first.');
-    }
-    
-    // Delete the plan
-    await this.planModel.findByIdAndDelete(id).exec();
-    
-    // Delete the PDF file if it exists
-    if (plan.pdfPath) {
-      const filePath = path.join(this.uploadPath, plan.pdfPath);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        this.logger.log(`Deleted PDF file: ${filePath}`);
-      }
-    }
-    
-    return { message: 'Plan deleted successfully' };
+ async remove(id: string, userId: string): Promise<{ message: string }> {
+  this.logger.log(`Removing plan with ID: ${id} by user ${userId}`);
+  
+  const plan = await this.findOne(id);
+  
+  // Check if user has permission - extract organizer ID
+  const organizerId = typeof plan.organizer === 'object' && plan.organizer._id
+    ? plan.organizer._id.toString()
+    : typeof plan.organizer === 'string'
+      ? plan.organizer
+      : null;
+  
+  if (organizerId !== userId) {
+    this.logger.warn(`User ${userId} does not have permission to delete plan ${id}`);
+    throw new ForbiddenException('You do not have permission to delete this plan');
   }
+  
+  // Check if plan is associated with any events
+  const events = await this.eventService.findAll();
+  const eventsUsingPlan = events.filter(event => {
+    if (!event.plan) return false;
+    
+    const eventPlanId = typeof event.plan === 'object' && event.plan._id
+      ? event.plan._id.toString()
+      : typeof event.plan === 'string'
+        ? event.plan
+        : null;
+        
+    return eventPlanId === id;
+  });
+  
+  if (eventsUsingPlan.length > 0) {
+    this.logger.warn(`Plan ${id} is associated with ${eventsUsingPlan.length} events and cannot be deleted`);
+    throw new BadRequestException(`Cannot delete a plan that is associated with events. Please dissociate it from all events first.`);
+  }
+  
+  // Delete all stands for this plan
+  await this.standService.removeByPlan(id);
+  
+  // Delete the plan
+  await this.planModel.findByIdAndDelete(id).exec();
+  
+  // Delete the PDF file if it exists
+  if (plan.pdfPath) {
+    const filePath = path.join(this.uploadPath, plan.pdfPath);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      this.logger.log(`Deleted PDF file: ${filePath}`);
+    }
+  }
+  
+  return { message: 'Plan and associated stands deleted successfully' };
+}
 
   /**
    * Associate plan with an event

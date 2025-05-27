@@ -20,6 +20,7 @@ import { EventStatus, EventVisibility } from './entities/event.entity';
 export class EventService {
   private readonly logger = new Logger(EventService.name);
   private readonly uploadPath: string;
+  isOwnedByUser: any;
 
   constructor(
     @InjectModel(Event.name) private readonly eventModel: Model<Event & { _id: Types.ObjectId }>,

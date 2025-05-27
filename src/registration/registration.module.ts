@@ -1,4 +1,5 @@
 // src/registration/registration.module.ts
+
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { RegistrationService } from './registration.service';
@@ -11,6 +12,7 @@ import { EquipmentModule } from '../equipment/equipment.module';
 import { MailModule } from '../mail/mail.module';
 import { AuthModule } from '../auth/auth.module';
 import { PlanModule } from 'src/plan/plan.module';
+import { OrganizerModule } from '../organizer/organizer.module'; // Add this import
 
 @Module({
   imports: [
@@ -22,6 +24,7 @@ import { PlanModule } from 'src/plan/plan.module';
     forwardRef(() => StandModule),
     forwardRef(() => PlanModule),
     forwardRef(() => EquipmentModule),
+    forwardRef(() => OrganizerModule), 
     MailModule,
     forwardRef(() => AuthModule),
   ],
