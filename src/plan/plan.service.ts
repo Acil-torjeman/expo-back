@@ -1,4 +1,4 @@
-// src/plan/plan.service.ts - Modified to support auto-activation
+// src/plan/plan.service.ts
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -323,44 +323,12 @@ export class PlanService {
       throw new BadRequestException('This event is not associated with this plan');
     }
     
-    // Delegate dissociation to event service
+    // Delegate dissociation to event service (it will handle setting plan to inactive)
     await this.eventService.dissociatePlan(eventId, userId);
-    
-    // Check if the plan is still associated with any events
-    const planWithEvents = await this.planModel.findById(planId).populate('events').exec();
-    
-    // If the plan has no more associated events, set it to inactive
-    if (planWithEvents && (!planWithEvents.events || planWithEvents.events.length === 0)) {
-      await this.planModel.findByIdAndUpdate(
-        planId,
-        { $set: { isActive: false } },
-        { new: true }
-      );
-    }
     
     // Return the updated plan
     return this.findOne(planId);
   }
-  /**
- * Check if a user owns a plan
- */
-private async isOwner(planId: string, userId: string): Promise<boolean> {
-  try {
-    const plan = await this.planModel.findById(planId).exec();
-    if (!plan) return false;
-    
-    // Convert both to strings for comparison
-    const planOrganizerId = plan.organizer.toString();
-    const userIdStr = userId.toString();
-    
-    this.logger.debug(`Plan ownership check: Plan owned by ${planOrganizerId}, request by ${userIdStr}`);
-    
-    return planOrganizerId === userIdStr;
-  } catch (error) {
-    this.logger.error(`Error checking plan ownership: ${error.message}`);
-    return false;
-  }
-}
 
 /**
  * Ensure plan is active

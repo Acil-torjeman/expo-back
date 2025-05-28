@@ -501,125 +501,166 @@ export class EventService {
     }
   }
 
-  /**
-   * Associate a plan with an event
-   */
-  async associatePlan(id: string, planId: string, userId: string): Promise<Event> {
-    this.logger.log(`Associating plan ${planId} with event ${id}`);
+ /**
+ * Associate a plan with an event
+ */
+async associatePlan(id: string, planId: string, userId: string): Promise<Event> {
+  this.logger.log(`Associating plan ${planId} with event ${id}`);
+  
+  try {
+    // Clean the IDs
+    const cleanEventId = String(id).trim();
+    const cleanPlanId = String(planId).trim();
+    const cleanUserId = String(userId).trim();
     
-    try {
-      // Clean the IDs
-      const cleanEventId = String(id).trim();
-      const cleanPlanId = String(planId).trim();
-      const cleanUserId = String(userId).trim();
+    // Check ownership with the simplified method
+    const isOwner = await this.isOwner(cleanEventId, cleanUserId);
+    
+    if (!isOwner) {
+      throw new ForbiddenException('You do not have permission to modify this event');
+    }
+    
+    // Now verify plan exists and belongs to the user
+    const plan = await this.planService.findOne(cleanPlanId);
+    
+    // Extract organizer ID properly whether it's a populated object or just an ID
+    const planOrganizerId = typeof plan.organizer === 'object' && plan.organizer._id
+      ? String(plan.organizer._id).trim()
+      : typeof plan.organizer === 'string'
+        ? String(plan.organizer).trim()
+        : null;
+    
+    this.logger.debug(`Plan ownership check: Plan organizer=${planOrganizerId}, User=${cleanUserId}`);
+    
+    if (planOrganizerId !== cleanUserId) {
+      throw new BadRequestException(`You can only associate your own plans with your event`);
+    }
+    
+    // Check if plan is already associated with another event
+    const allEvents = await this.findAll();
+    const eventUsingPlan = allEvents.find(event => {
+      if (!event.plan || String(event._id) === cleanEventId) return false;
       
-      // Check ownership with the simplified method
-      const isOwner = await this.isOwner(cleanEventId, cleanUserId);
-      
-      if (!isOwner) {
-        throw new ForbiddenException('You do not have permission to modify this event');
-      }
-      
-      // Now verify plan exists and belongs to the user
-      const plan = await this.planService.findOne(cleanPlanId);
-      
-      // Extract organizer ID properly whether it's a populated object or just an ID
-      const planOrganizerId = typeof plan.organizer === 'object' && plan.organizer._id
-        ? String(plan.organizer._id).trim()
-        : typeof plan.organizer === 'string'
-          ? String(plan.organizer).trim()
+      const eventPlanId = typeof event.plan === 'object' && event.plan._id
+        ? String(event.plan._id).trim()
+        : typeof event.plan === 'string'
+          ? String(event.plan).trim()
           : null;
-      
-      this.logger.debug(`Plan ownership check: Plan organizer=${planOrganizerId}, User=${cleanUserId}`);
-      
-      if (planOrganizerId !== cleanUserId) {
-        throw new BadRequestException(`You can only associate your own plans with your event`);
-      }
-      
-      // Automatically activate the plan if it's not already active
-      if (!plan.isActive) {
-        this.logger.log(`Activating plan ${cleanPlanId} as it's being associated with event`);
-        await this.planService.activatePlan(cleanPlanId);
-      }
-      
-      // Update the event with the plan
-      const updatedEvent = await this.eventModel.findByIdAndUpdate(
-        cleanEventId,
-        { plan: new Types.ObjectId(cleanPlanId) },
-        { new: true }
-      )
-      .populate('organizer', 'username email')
-      .populate('plan', 'name')
-      .exec();
-      
-      if (!updatedEvent) {
-        throw new NotFoundException(`Event with ID ${cleanEventId} not found after update`);
-      }
-      
-      return updatedEvent;
-    } catch (error) {
-      if (error instanceof NotFoundException || 
-          error instanceof ForbiddenException || 
-          error instanceof BadRequestException) {
-        throw error;
-      }
-      
-      this.logger.error(`Error associating plan: ${error.message}`, error.stack);
-      throw new InternalServerErrorException(`Failed to associate plan: ${error.message}`);
-    }
-  }
-
-  /**
-   * Dissociate plan from an event
-   */
-  async dissociatePlan(id: string, userId: string): Promise<Event> {
-    this.logger.log(`Dissociating plan from event ${id}`);
+          
+      return eventPlanId === cleanPlanId;
+    });
     
-    try {
-      // Clean the IDs
-      const cleanEventId = String(id).trim();
-      const cleanUserId = String(userId).trim();
-      
-      // Check ownership with the simplified method
-      const isOwner = await this.isOwner(cleanEventId, cleanUserId);
-      
-      if (!isOwner) {
-        throw new ForbiddenException('You do not have permission to modify this event');
-      }
-      
-      // Get event to check if it has a plan
-      const event = await this.eventModel.findById(cleanEventId).exec();
-      
-      // Check if event has a plan
-      if (!event || !event.plan) {
-        throw new BadRequestException('This event does not have an associated plan');
-      }
-      
-      // Update the event to remove the plan
-      const updatedEvent = await this.eventModel.findByIdAndUpdate(
-        cleanEventId,
-        { $unset: { plan: "" } },
-        { new: true }
-      )
-      .populate('organizer', 'username email')
-      .exec();
-      
-      if (!updatedEvent) {
-        throw new NotFoundException(`Event with ID ${cleanEventId} not found after update`);
-      }
-      
-      return updatedEvent;
-    } catch (error) {
-      if (error instanceof NotFoundException || 
-          error instanceof ForbiddenException || 
-          error instanceof BadRequestException) {
-        throw error;
-      }
-      
-      this.logger.error(`Error dissociating plan: ${error.message}`, error.stack);
-      throw new InternalServerErrorException(`Failed to dissociate plan: ${error.message}`);
+    if (eventUsingPlan) {
+      throw new BadRequestException(`This plan is already associated with another event: ${eventUsingPlan.name}`);
     }
+    
+    // Automatically activate the plan if it's not already active
+    if (!plan.isActive) {
+      this.logger.log(`Activating plan ${cleanPlanId} as it's being associated with event`);
+      await this.planService.activatePlan(cleanPlanId);
+    }
+    
+    // Update the event with the plan
+    const updatedEvent = await this.eventModel.findByIdAndUpdate(
+      cleanEventId,
+      { plan: new Types.ObjectId(cleanPlanId) },
+      { new: true }
+    )
+    .populate('organizer', 'username email')
+    .populate('plan', 'name')
+    .exec();
+    
+    if (!updatedEvent) {
+      throw new NotFoundException(`Event with ID ${cleanEventId} not found after update`);
+    }
+    
+    return updatedEvent;
+  } catch (error) {
+    if (error instanceof NotFoundException || 
+        error instanceof ForbiddenException || 
+        error instanceof BadRequestException) {
+      throw error;
+    }
+    
+    this.logger.error(`Error associating plan: ${error.message}`, error.stack);
+    throw new InternalServerErrorException(`Failed to associate plan: ${error.message}`);
   }
+}
+
+/**
+ * Dissociate plan from an event
+ */
+async dissociatePlan(id: string, userId: string): Promise<Event> {
+  this.logger.log(`Dissociating plan from event ${id}`);
+  
+  try {
+    // Clean the IDs
+    const cleanEventId = String(id).trim();
+    const cleanUserId = String(userId).trim();
+    
+    // Check ownership with the simplified method
+    const isOwner = await this.isOwner(cleanEventId, cleanUserId);
+    
+    if (!isOwner) {
+      throw new ForbiddenException('You do not have permission to modify this event');
+    }
+    
+    // Get event to check if it has a plan
+    const event = await this.eventModel.findById(cleanEventId).exec();
+    
+    // Check if event has a plan
+    if (!event || !event.plan) {
+      throw new BadRequestException('This event does not have an associated plan');
+    }
+    
+    // Get the plan ID before removing it
+    const planId = String(event.plan);
+    
+    // Update the event to remove the plan
+    const updatedEvent = await this.eventModel.findByIdAndUpdate(
+      cleanEventId,
+      { $unset: { plan: "" } },
+      { new: true }
+    )
+    .populate('organizer', 'username email')
+    .exec();
+    
+    if (!updatedEvent) {
+      throw new NotFoundException(`Event with ID ${cleanEventId} not found after update`);
+    }
+    
+    // Check if the plan is still used by other events
+    const allEvents = await this.findAll();
+    const eventsUsingPlan = allEvents.filter(evt => {
+      if (!evt.plan || String(evt._id) === cleanEventId) return false;
+      
+      const evtPlanId = typeof evt.plan === 'object' && evt.plan._id
+        ? String(evt.plan._id)
+        : typeof evt.plan === 'string'
+          ? String(evt.plan)
+          : null;
+          
+      return evtPlanId === planId;
+    });
+    
+    // If no other events use this plan, set it to inactive
+    if (eventsUsingPlan.length === 0) {
+      this.logger.log(`Plan ${planId} no longer used by any events, setting to inactive`);
+      await this.planService.update(planId, { isActive: false }, undefined, cleanUserId);
+    }
+    
+    return updatedEvent;
+  } catch (error) {
+    if (error instanceof NotFoundException || 
+        error instanceof ForbiddenException || 
+        error instanceof BadRequestException) {
+      throw error;
+    }
+    
+    this.logger.error(`Error dissociating plan: ${error.message}`, error.stack);
+    throw new InternalServerErrorException(`Failed to dissociate plan: ${error.message}`);
+  }
+}
 
   /**
    * Find all stands for an event
