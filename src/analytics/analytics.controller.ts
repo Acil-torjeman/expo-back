@@ -278,8 +278,26 @@ export class AnalyticsController {
     }
   }
   
-   //Debug endpoint to verify stands for organizer's events
+  @Get('participants-by-event')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ORGANIZER)
+@HttpCode(HttpStatus.OK)
+async getParticipantsByEvent(@Req() req) {
+  try {
+    const organizer = await this.getOrganizerByUserId(req.user.id);
+    
+    if (!organizer) {
+      throw new NotFoundException('Organizer profile not found');
+    }
+    
+    return this.analyticsService.getParticipantsByEvent(organizer._id.toString());
+  } catch (error) {
+    this.logger.error(`Error getting participants by event: ${error.message}`);
+    throw error;
+  }
+}
 
+   //Debug endpoint to verify stands for organizer's events
   @Get('debug/stands')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ORGANIZER)

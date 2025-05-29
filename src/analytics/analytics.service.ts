@@ -203,7 +203,7 @@ export class AnalyticsService {
       };
     }
   }
-
+  
   private async calculateStandsReserved30Days(eventIds: Types.ObjectId[], events: any[]): Promise<any> {
     try {
       let totalStandsReserved30Days = 0;
@@ -234,6 +234,41 @@ export class AnalyticsService {
       return { value: 0 };
     }
   }
+
+  async getParticipantsByEvent(organizerId: string): Promise<any> {
+  try {
+    const events = await this.eventModel.find({ 
+      organizer: new Types.ObjectId(organizerId) 
+    }).exec();
+
+    const eventParticipants = await Promise.all(
+      events.map(async (event) => {
+        const participantCount = await this.registrationModel.countDocuments({
+          event: event._id,
+          status: { $in: [RegistrationStatus.APPROVED, RegistrationStatus.COMPLETED] }
+        }).exec();
+
+        return {
+          eventName: event.name,
+          participants: participantCount
+        };
+      })
+    );
+
+    return {
+      labels: eventParticipants.map(item => item.eventName),
+      data: eventParticipants.map(item => item.participants),
+      total: eventParticipants.reduce((sum, item) => sum + item.participants, 0)
+    };
+  } catch (error) {
+    this.logger.error(`Error getting participants by event: ${error.message}`);
+    return {
+      labels: [],
+      data: [],
+      total: 0
+    };
+  }
+}
 
   private async calculateAverageProcessingTime(
     eventIds: Types.ObjectId[], 
